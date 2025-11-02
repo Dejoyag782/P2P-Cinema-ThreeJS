@@ -58,18 +58,25 @@ export default function PeerVideoRoom() {
       <audio ref={audioRef} className="hidden" />
 
       {!role && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-black/70 space-y-6 z-50">
-          <h1 className="text-3xl font-bold">🎥 Vinema 3D</h1>
-          <p className="text-lg">Are you a Host or Viewer?</p>
-          <div className="flex space-x-4">
-            <button onClick={() => setRole("host")} className="px-6 py-3 bg-blue-600 rounded-xl">
-              I’m the Host
-            </button>
-            <button onClick={() => setRole("viewer")} className="px-6 py-3 bg-green-600 rounded-xl">
-              I’m a Viewer
-            </button>
+        <>
+         <CinemaWrapper
+            key={videoKey}
+            videoElement={hostVideoRef.current as any}
+            videoStream={hostStream}
+          />
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-black/70 backdrop-blur-lg space-y-6 z-50">
+            <h1 className="text-3xl font-bold">🎥 Cinema 3D</h1>
+            <p className="text-lg">Are you a Host or Viewer?</p>
+            <div className="flex space-x-4">
+              <button onClick={() => setRole("host")} className="px-6 py-3 bg-blue-600 rounded-xl">
+                I’m the Host
+              </button>
+              <button onClick={() => setRole("viewer")} className="px-6 py-3 bg-green-600 rounded-xl">
+                I’m a Viewer
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {role === "host" && (
@@ -78,7 +85,6 @@ export default function PeerVideoRoom() {
             peerRef={peerRef}
             peerId={peerId as string}
             localStream={localStream.current}
-            videoRef={hostVideoRef as any}
             enableMic={enableMic}
             disableMic={disableMic}
             onStreamChange={setHostStream} // ✅ update current active stream
@@ -100,7 +106,10 @@ export default function PeerVideoRoom() {
             enableMic={enableMic}
             disableMic={disableMic}
           />
-          {remoteStream && <CinemaWrapper key={videoKey} videoStream={remoteStream} />}
+          <CinemaWrapper
+            key={`viewer-${videoKey}`}
+            videoStream={remoteStream}
+          />
         </>
       )}
     </div>

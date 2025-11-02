@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import type { RefObject } from "react";
 
 interface Props {
   peerRef: React.MutableRefObject<any>;
   peerId: string;
   localStream: MediaStream | null;
-  videoRef: RefObject<HTMLVideoElement>;
   enableMic: () => void;
   disableMic: () => void;
   onStreamChange?: (stream: MediaStream | null) => void; // ✅ NEW
@@ -15,7 +13,6 @@ export default function HostControls({
   peerRef,
   peerId,
   localStream,
-  videoRef,
   enableMic,
   disableMic,
   onStreamChange,
@@ -23,18 +20,20 @@ export default function HostControls({
   const [controlsVisible, setControlsVisible] = useState(true);
   const [talking, setTalking] = useState(false);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [isSharingTabAudio, setIsSharingTabAudio] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // 🖥️ Share screen
+  // 🖥️ Share screen and tab audio
   const startScreenShare = async () => {
-    if (isSharingScreen) return;
+    if (isSharingScreen || isSharingTabAudio) return;
     try {
-      const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      screen.getVideoTracks()[0].onended = stopScreenShare;
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      screenStream.getVideoTracks()[0].onended = stopScreenShare;
 
       const combined = new MediaStream([
-        ...screen.getVideoTracks(),
+        ...screenStream.getVideoTracks(),
+        ...audioStream.getAudioTracks(),
         ...(localStream?.getAudioTracks() ?? []),
       ]);
 
@@ -42,21 +41,20 @@ export default function HostControls({
       onStreamChange?.(combined);
 
       setIsSharingScreen(true);
-      setIsStreaming(true);
+      setIsSharingTabAudio(true);
 
-      alert(`🖥️ Sharing screen! Room ID: ${peerId}`);
+      alert(`🖥️ Sharing screen and tab audio! Room ID: ${peerId}`);
     } catch (err) {
       console.error(err);
     }
   };
 
-
   const stopScreenShare = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     onStreamChange?.(null); // ✅ reset stream in parent
     setIsSharingScreen(false);
-    setIsStreaming(false);
-    alert("🛑 Screen sharing stopped");
+    setIsSharingTabAudio(false);
+    alert("🛑 Screen sharing and tab audio stopped");
   };
 
   // 🎙️ Push-to-Talk
@@ -136,12 +134,14 @@ export default function HostControls({
           */}
 
           <button
-            onClick={isSharingScreen ? stopScreenShare : startScreenShare}
+            onClick={
+              isSharingScreen || isSharingTabAudio ? stopScreenShare : startScreenShare
+            }
             className={`w-full px-4 py-2 rounded-xl font-medium ${
-              isSharingScreen ? "bg-red-600" : "bg-purple-600 hover:bg-purple-700"
+              isSharingScreen || isSharingTabAudio ? "bg-red-600" : "bg-purple-600 hover:bg-purple-700"
             }`}
           >
-            {isSharingScreen ? "🛑 Stop Sharing" : "🖥️ Share Screen"}
+            {isSharingScreen || isSharingTabAudio ? "🛑 Stop Sharing" : "🖥️ Share Screen and Tab Audio"}
           </button>
 
           <button
