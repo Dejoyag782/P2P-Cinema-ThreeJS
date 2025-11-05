@@ -23,38 +23,93 @@ export default function HostControls({
   const [isSharingTabAudio, setIsSharingTabAudio] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // 🖥️ Share screen and tab audio
+  // 🖥️ Share screen with system audio
   const startScreenShare = async () => {
     if (isSharingScreen || isSharingTabAudio) return;
+    
     try {
-      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      screenStream.getVideoTracks()[0].onended = stopScreenShare;
+      // Request screen capture with system audio (Chrome 74+)
+      const displayMediaOptions = {
+        video: {
+          cursor: 'always'
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        },
+        // @ts-ignore - systemAudio is not in the type definition but works in Chrome
+        systemAudio: 'include' as const
+      };
 
-      const combined = new MediaStream([
-        ...screenStream.getVideoTracks(),
-        ...audioStream.getAudioTracks(),
-        ...(localStream?.getAudioTracks() ?? []),
-      ]);
+      // Get screen capture with audio
+      const screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions as DisplayMediaStreamOptions);
+      const videoTrack = screenStream.getVideoTracks()[0];
+      
+      // Handle when user stops sharing via browser UI
+      videoTrack.onended = stopScreenShare;
+      
+      // Create a new stream with both screen and audio
+      const combinedStream = new MediaStream();
+      
+      // Add screen video track
+      if (videoTrack) {
+        combinedStream.addTrack(videoTrack);
+      }
+      
+      // Add audio tracks if available (system audio or microphone)
+      const audioTracks = screenStream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        audioTracks.forEach(track => combinedStream.addTrack(track));
+      } else {
+        // Fallback to microphone if no system audio is available
+        try {
+          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioStream.getAudioTracks().forEach(track => combinedStream.addTrack(track));
+        } catch (audioError) {
+          console.warn('Could not access microphone:', audioError);
+        }
+      }
 
-      streamRef.current = combined;
-      onStreamChange?.(combined);
-
+      // Store the stream and update state
+      streamRef.current = combinedStream;
+      onStreamChange?.(combinedStream);
+      
       setIsSharingScreen(true);
-      setIsSharingTabAudio(true);
-
-      alert(`🖥️ Sharing screen and tab audio! Room ID: ${peerId}`);
+      setIsSharingTabAudio(audioTracks.length > 0);
+      
+      console.log('🖥️ Screen sharing with audio started');
+      
     } catch (err) {
-      console.error(err);
+      console.error('Error starting screen share:', err);
+      // Clean up on error
+      stopScreenShare();
+      alert('Failed to start screen sharing. Please try again.');
     }
   };
 
   const stopScreenShare = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    onStreamChange?.(null); // ✅ reset stream in parent
-    setIsSharingScreen(false);
-    setIsSharingTabAudio(false);
-    alert("🛑 Screen sharing and tab audio stopped");
+    try {
+      // Stop all tracks in the stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => {
+          track.stop();
+          streamRef.current?.removeTrack(track);
+        });
+        streamRef.current = null;
+      }
+      
+      // Update parent component
+      onStreamChange?.(null);
+      
+      // Reset state
+      setIsSharingScreen(false);
+      setIsSharingTabAudio(false);
+      
+      console.log('🛑 Screen sharing stopped');
+    } catch (err) {
+      console.error('Error stopping screen share:', err);
+    }
   };
 
   // 🎙️ Push-to-Talk
@@ -69,29 +124,7 @@ export default function HostControls({
     };
   }, [enableMic, disableMic]);
 
-  // 🧩 ✅ Add this effect right here
-  useEffect(() => {
-    if (!peerRef.current) return;
-
-    const peer = peerRef.current;
-
-    const handleCall = (call: any) => {
-      console.log("📞 Incoming viewer connection:", call.peer);
-      if (streamRef.current) {
-        call.answer(streamRef.current); // ✅ Answer with current screen stream
-        console.log("✅ Answered call with active stream");
-      } else {
-        console.warn("⚠️ No stream active — cannot answer");
-        call.close();
-      }
-    };
-
-    peer.on("call", handleCall);
-
-    return () => {
-      peer.off("call", handleCall);
-    };
-  }, [peerRef]); // 👈 depends only on peerRef
+  // Call handling is now managed by the parent component (video-room.tsx)
 
   // Clean up streams when unmounted
   useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), []);

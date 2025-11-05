@@ -128,7 +128,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
 
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center bg-black">
+    <div className="relative w-full h-full flex items-center justify-center bg-none">
       <div ref={mountRef} className="absolute inset-0 w-full h-full z-0" />
       <div className="absolute bottom-4 text-white text-sm opacity-80">
         Click to look around (Esc to exit)
