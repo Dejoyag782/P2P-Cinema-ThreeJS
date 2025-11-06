@@ -47,6 +47,12 @@ export default function PeerVideoRoom() {
 
       {/* ——— Role Selection ——— */}
       {!role && (
+        <>
+        <CinemaWrapper
+          key={videoKey}
+          videoElement={hostVideoRef.current as any}
+          videoStream={hostStream}
+        />
         <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-black/70 backdrop-blur-lg space-y-6 z-50">
           <div className="grid grid-cols-2 gap-6 max-w-250 items-center justify-center">
             <div className="flex bg-white/20 backdrop-blur-lg h-full rounded-2xl p-6 flex-col items-center justify-center space-y-6">
@@ -88,6 +94,7 @@ export default function PeerVideoRoom() {
             </div>
           </div>
         </div>
+        </>
       )}
 
       {/* ——— Host View ——— */}

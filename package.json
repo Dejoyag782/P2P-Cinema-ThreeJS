@@ -12,6 +12,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.1.16",
     "hls.js": "^1.6.13",
+    "lucide-react": "^0.552.0",
     "p2p-media-loader-hlsjs": "^2.2.1",
     "peerjs": "^1.5.5",
     "react": "^19.1.1",

@@ -170,7 +170,7 @@ export default function PeerVideoRoom() {
           {videoRef.current && (
             <CinemaVideo
               key="host-cinema"
-              videoElement={videoRef.current}
+              // videoElement={videoRef.current}
               modelUrl={CinemaModel}
               width={window.innerWidth}
               height={window.innerHeight}
@@ -183,7 +183,7 @@ export default function PeerVideoRoom() {
           {remoteStream && remoteVideoRef.current && (
             <CinemaVideo
               key="viewer-cinema"
-              videoStream={remoteStream}
+              // videoStream={remoteStream}
               modelUrl={CinemaModel}
               width={window.innerWidth}
               height={window.innerHeight}

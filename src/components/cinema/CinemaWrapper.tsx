@@ -19,8 +19,14 @@ export default function CinemaWrapper({
   width = window.innerWidth,
   height = window.innerHeight,
 }: Props) {
+
+  console.log("videoElement", videoElement);
+  console.log("videoStream", videoStream);
+  
   return (
-    <CinemaVideo
+    <>
+    <video src={videoStream?.getVideoTracks()[0] as any} autoPlay />
+      <CinemaVideo
       key={
         videoStream
           ? "cinema-stream"
@@ -29,10 +35,11 @@ export default function CinemaWrapper({
           : "cinema-default"
       }
       videoElement={videoElement}
-      videoStream={videoStream}
-      modelUrl={CinemaModel}
-      width={width}
-      height={height}
-    />
+        videoStream={videoStream}
+        modelUrl={CinemaModel}
+        width={width}
+        height={height}
+      />
+    </>
   );
 }
