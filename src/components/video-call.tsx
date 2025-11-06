@@ -193,22 +193,40 @@ const VideoCall = () => {
 
   if (!role) {
     return (
-      <div className="min-h-screen flex flex-col justify-center items-center bg-gray-950 text-gray-100">
-        <h2 className="text-2xl mb-4 font-semibold">Choose your role</h2>
-        <div className="flex gap-4">
-          <button
-            onClick={() => setRole('host')}
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg text-white"
-          >
-            🎙️ Host
-          </button>
-          <button
-            onClick={() => setRole('viewer')}
-            className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg text-white"
-          >
-            👀 Viewer
-          </button>
-        </div>
+     <div className="relative w-screen h-screen bg-black overflow-hidden">
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-black/70 backdrop-blur-lg space-y-6 z-50">
+          <div className="grid grid-cols-2 gap-6 max-w-250 items-center justify-center">
+            <div className="flex bg-white/20 backdrop-blur-lg h-full rounded-2xl p-6 flex-col items-center justify-center space-y-6">
+              <h1 className="text-5xl font-bold">🎥 Vinema 3D</h1>
+              <p className="text-2xl">Are you a Host or Viewer?</p>
+              <div className="flex space-x-4">
+                <button onClick={() => setRole("host")} className="px-6 py-3 bg-blue-600 rounded-xl text-xl">
+                  I’m the Host
+                </button>
+                <button onClick={() => setRole("viewer")} className="px-6 py-3 bg-green-600 rounded-xl text-xl">
+                  I’m a Viewer
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 text-white/90 h-full">
+              <div className="bg-white/20 p-4 rounded-xl backdrop-blur-md">
+                <h2 className="text-xl font-semibold mb-2">🌐 Powered by PeerJS</h2>
+                <p className="text-sm leading-relaxed">
+                  Vinema 3D connects hosts and viewers directly using <strong>PeerJS</strong>, 
+                  enabling real-time, peer-to-peer video streaming without centralized servers.
+                </p>
+              </div>
+              <div className="bg-white/20 p-4 rounded-xl backdrop-blur-md">
+                <h2 className="text-xl font-semibold mb-2">🎬 Immersive with Three.js</h2>
+                <p className="text-sm leading-relaxed">
+                  Each viewing session takes place inside a 3D virtual environment — a digital theater powered by <strong>Three.js</strong>.
+                </p>
+              </div>
+            </div>
+          </div>
+      </div>
+      <CinemaWrapper/>
       </div>
     );
   }
