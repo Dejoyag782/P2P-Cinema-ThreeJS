@@ -13,16 +13,13 @@ const VideoCall = () => {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
-
-  
-  const hostVideoRef = useRef<HTMLVideoElement | null>(null);
-  const viewerVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const copyToClipboard = () => {
     if (peerId) {
@@ -217,10 +214,17 @@ const VideoCall = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center py-8 px-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-lg p-6 max-w-3xl w-full">
+    <div className="relative w-screen h-screen bg-black overflow-hidden">
+      <button
+        onClick={() => setControlsVisible(!controlsVisible)}
+        className="absolute top-6 right-6 z-50 bg-gray-900/70 text-white rounded-full p-3 shadow-lg"
+      >
+        ⚙️
+      </button>
+      {controlsVisible && (
+      <div className="absolute top-20 right-6 bg-gray-900/85 text-white rounded-2xl p-5 w-100 space-y-4 shadow-lg z-50">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-semibold">🎥 PeerJS Video Call</h2>
+          <h2 className="text-2xl font-semibold">🎥 Vinema 3D</h2>
           <div className="flex items-center gap-2 text-sm">
             <User size={16} />
             <span className="capitalize text-gray-400">{role}</span>
@@ -277,27 +281,35 @@ const VideoCall = () => {
           </div>
         )}
 
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="bg-gray-800 rounded-xl overflow-hidden">
-            <h3 className="text-center text-gray-400 py-2 text-sm">Local Video</h3>
-            <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video bg-black object-cover" />
-                {/* <CinemaWrapper
-                key={"local-video"}
-                videoElement={localVideoRef.current as any}
-                videoStream={localStreamRef.current as any}
-                /> */}
-          </div>
-          <div className="bg-gray-800 rounded-xl overflow-hidden">
-            <h3 className="text-center text-gray-400 py-2 text-sm">Remote Video</h3>
-            <video ref={remoteVideoRef} autoPlay playsInline className="w-full aspect-video bg-black object-cover" />
-            {/* <CinemaWrapper
-              key={"remote-video"}
-              videoElement={remoteVideoRef.current as any}
-              videoStream={remoteStreamRef.current as any}
-            /> */}
-          </div>
+        
+      </div>
+      )}
+
+      <div className="grid sm:grid-cols-2 gap-4 absolute bottom-0">
+        <div className="bg-gray-800 rounded-xl overflow-hidden">
+          <h3 className="text-center text-gray-400 py-2 text-sm">Local Video</h3>
+          <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video bg-black object-cover" />
+        </div>
+        <div className="bg-gray-800 rounded-xl overflow-hidden">
+          <h3 className="text-center text-gray-400 py-2 text-sm">Remote Video</h3>
+          <video ref={remoteVideoRef} autoPlay playsInline className="w-full aspect-video bg-black object-cover" />
         </div>
       </div>
+
+      {role === 'host' && (
+        <CinemaWrapper
+          key={1}          
+          videoElement={localVideoRef.current as any}
+          videoStream={localStreamRef.current as any}
+        />
+      )}
+      {role === 'viewer' && (
+        <CinemaWrapper
+          key={0}
+          videoElement={remoteVideoRef.current as any}
+          videoStream={remoteStreamRef.current as any}
+        />
+      )}
     </div>
   );
 };

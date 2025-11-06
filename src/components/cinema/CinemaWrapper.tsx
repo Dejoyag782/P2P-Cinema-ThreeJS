@@ -25,7 +25,7 @@ export default function CinemaWrapper({
   
   return (
     <>
-    <video src={videoStream?.getVideoTracks()[0] as any} autoPlay />
+    {/* <video src={videoStream?.getVideoTracks()[0] as any} autoPlay /> */}
       <CinemaVideo
       key={
         videoStream
