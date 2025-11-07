@@ -1,114 +1,293 @@
+// import { useEffect, useRef, useState } from 'react';
+// import Peer from 'peerjs';
+// import { Video, VideoOff, Mic, MicOff, ScreenShare, XCircle, Phone, Copy, User } from 'lucide-react';
+// import CinemaWrapper from './cinema/CinemaWrapper';
+
+// const VideoCall = () => {
+//   const [role, setRole] = useState<'host' | 'viewer' | null>(null);
+//   const [peerId, setPeerId] = useState<string | null>(null);
+//   const [remotePeerId, setRemotePeerId] = useState('');
+//   const [peer, setPeer] = useState<Peer | null>(null);
+//   const [call, setCall] = useState<any>(null);
+//   const [isMuted, setIsMuted] = useState(false);
+//   const [isVideoHidden, setIsVideoHidden] = useState(false);
+//   const [isScreenSharing, setIsScreenSharing] = useState(false);
+//   const [copied, setCopied] = useState(false);
+//   const [controlsVisible, setControlsVisible] = useState(true);
+
+//   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+//   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+//   const localStreamRef = useRef<MediaStream | null>(null);
+//   const remoteStreamRef = useRef<MediaStream | null>(null);
+//   const screenStreamRef = useRef<MediaStream | null>(null);
+
+//   const copyToClipboard = () => {
+//     if (peerId) {
+//       navigator.clipboard
+//         .writeText(peerId)
+//         .then(() => {
+//           setCopied(true);
+//           setTimeout(() => setCopied(false), 1500);
+//         })
+//         .catch(err => console.error('Failed to copy:', err));
+//     }
+//   };
+
+//   useEffect(() => {
+//     if (!call) return;
+//     const handleClose = () => endCall();
+//     call.on('close', handleClose);
+//     return () => call.off?.('close', handleClose);
+//   }, [call]);
+
+//   useEffect(() => {
+//     if (!role) return;
+
+//     const newPeer = new Peer();
+//     newPeer.on('open', id => setPeerId(id as string));
+
+//     newPeer.on('call', incomingCall => {
+//       if (role === 'viewer') return; // viewer shouldn't receive calls
+
+//       navigator.mediaDevices
+//         .getUserMedia({ video: true, audio: true })
+//         .then(stream => {
+//           localStreamRef.current = stream;
+//           if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+//           incomingCall.answer(stream);
+//           incomingCall.on('stream', remoteStream => {
+//             remoteStreamRef.current = remoteStream;
+//             if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+//           });
+//           setCall(incomingCall);
+//         });
+//     });
+
+//     newPeer.on('disconnected', () => {
+//       newPeer.reconnect();
+//       endCall();
+//     });
+
+//     newPeer.on('close', () => {
+//       endCall();
+//       setPeer(null);
+//       setPeerId(null);
+//     });
+
+//     setPeer(newPeer);
+
+//     const handleUnload = () => {
+//       endCall();
+//       newPeer.destroy();
+//       setPeer(null);
+//       setPeerId(null);
+//     };
+
+//     window.addEventListener('beforeunload', handleUnload);
+//     return () => {
+//       window.removeEventListener('beforeunload', handleUnload);
+//       newPeer.destroy();
+//     };
+//   }, [role]);
+
+//   const callPeer = () => {
+//     if (!peer || !remotePeerId) return;
+//     navigator.mediaDevices
+//       .getUserMedia({ video: true, audio: true })
+//       .then(stream => {
+//         localStreamRef.current = stream;
+//         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+//         const outgoingCall = peer.call(remotePeerId, stream);
+//         outgoingCall.on('stream', remoteStream => {
+//           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+//         });
+//         setCall(outgoingCall);
+//       });
+//   };
+
+//   const endCall = () => {
+//     call?.close();
+//     localStreamRef.current?.getTracks().forEach(track => track.stop());
+//     screenStreamRef.current?.getTracks().forEach(track => track.stop());
+//     if (localVideoRef.current) localVideoRef.current.srcObject = null;
+//     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+
+//     setCall(null);
+//     setIsMuted(false);
+//     setIsVideoHidden(false);
+//     setIsScreenSharing(false);
+//   };
+
+//   const toggleMute = () => {
+//     const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+//     if (audioTrack) {
+//       audioTrack.enabled = !audioTrack.enabled;
+//       setIsMuted(!audioTrack.enabled);
+//     }
+//   };
+
+//   const toggleVideo = () => {
+//     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+//     if (videoTrack) {
+//       videoTrack.enabled = !videoTrack.enabled;
+//       setIsVideoHidden(!videoTrack.enabled);
+//     }
+//   };
+
+//   const toggleScreenShare = async () => {
+//     if (isScreenSharing) stopScreenShare();
+//     else startScreenShare();
+//   };
+
+//   const startScreenShare = async () => {
+//     if (!call) return;
+//     try {
+//       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+//       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+//       const audioContext = new AudioContext();
+//       const destination = audioContext.createMediaStreamDestination();
+
+//       if (screenStream.getAudioTracks().length > 0) {
+//         const screenAudio = audioContext.createMediaStreamSource(screenStream);
+//         screenAudio.connect(destination);
+//       }
+
+//       if (micStream.getAudioTracks().length > 0) {
+//         const micAudio = audioContext.createMediaStreamSource(micStream);
+//         micAudio.connect(destination);
+//       }
+
+//       const combinedStream = new MediaStream([
+//         ...screenStream.getVideoTracks(),
+//         ...destination.stream.getAudioTracks(),
+//       ]);
+
+//       screenStreamRef.current = combinedStream;
+
+//       const sender = call.peerConnection.getSenders().find((s: any) => s.track.kind === 'video');
+//       if (sender) sender.replaceTrack(combinedStream.getVideoTracks()[0]);
+
+//       const audioSender = call.peerConnection.getSenders().find((s: any) => s.track.kind === 'audio');
+//       if (audioSender && combinedStream.getAudioTracks().length > 0)
+//         audioSender.replaceTrack(combinedStream.getAudioTracks()[0]);
+
+//       if (localVideoRef.current) localVideoRef.current.srcObject = combinedStream;
+//       screenStream.getVideoTracks()[0].onended = () => stopScreenShare();
+
+//       setIsScreenSharing(true);
+//     } catch (error) {
+//       console.error('Error starting screen share:', error);
+//     }
+//   };
+
+//   const stopScreenShare = () => {
+//     screenStreamRef.current?.getTracks().forEach(track => track.stop());
+//     const sender = call?.peerConnection.getSenders().find((s: any) => s.track.kind === 'video');
+//     if (sender && localStreamRef.current) {
+//       sender.replaceTrack(localStreamRef.current.getVideoTracks()[0]);
+//       if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+//     }
+//     setIsScreenSharing(false);
+//   };
+
+
 import { useEffect, useRef, useState } from 'react';
-import Peer from 'peerjs';
-import { Video, VideoOff, Mic, MicOff, ScreenShare, XCircle, Phone, Copy, User } from 'lucide-react';
+import Peer, { MediaConnection } from 'peerjs';
+import {
+  Video, VideoOff, Mic, MicOff, ScreenShare, XCircle, Phone, Copy, User
+} from 'lucide-react';
 import CinemaWrapper from './cinema/CinemaWrapper';
 
 const VideoCall = () => {
   const [role, setRole] = useState<'host' | 'viewer' | null>(null);
-  const [peerId, setPeerId] = useState<string | null>(null);
-  const [remotePeerId, setRemotePeerId] = useState('');
   const [peer, setPeer] = useState<Peer | null>(null);
-  const [call, setCall] = useState<any>(null);
+  const [peerId, setPeerId] = useState('');
+  const [remotePeerId, setRemotePeerId] = useState('');
+  const [call, setCall] = useState<MediaConnection | null>(null);
+  const [controlsVisible, setControlsVisible] = useState(true);
+
+  
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(true);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
 
+  // --- Copy Peer ID to Clipboard ---
   const copyToClipboard = () => {
-    if (peerId) {
-      navigator.clipboard
-        .writeText(peerId)
-        .then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        })
-        .catch(err => console.error('Failed to copy:', err));
-    }
+    if (!peerId) return;
+    navigator.clipboard.writeText(peerId)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(console.error);
   };
 
-  useEffect(() => {
-    if (!call) return;
-    const handleClose = () => endCall();
-    call.on('close', handleClose);
-    return () => call.off?.('close', handleClose);
-  }, [call]);
-
+  // --- Initialize Peer ---
   useEffect(() => {
     if (!role) return;
 
-    const newPeer = new Peer();
-    newPeer.on('open', id => setPeerId(id as string));
+    const p = new Peer();
+    setPeer(p);
 
-    newPeer.on('call', incomingCall => {
-      if (role === 'viewer') return; // viewer shouldn't receive calls
+    p.on('open', id => setPeerId(id));
 
-      navigator.mediaDevices
-        .getUserMedia({ video: true, audio: true })
+    // Only hosts accept incoming calls
+    p.on('call', (incomingCall) => {
+      if (role !== 'host') return;
+
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         .then(stream => {
           localStreamRef.current = stream;
           if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
           incomingCall.answer(stream);
           incomingCall.on('stream', remoteStream => {
-            remoteStreamRef.current = remoteStream;
             if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
           });
+
           setCall(incomingCall);
-        });
+        })
+        .catch(console.error);
     });
 
-    newPeer.on('disconnected', () => {
-      newPeer.reconnect();
-      endCall();
-    });
-
-    newPeer.on('close', () => {
-      endCall();
-      setPeer(null);
-      setPeerId(null);
-    });
-
-    setPeer(newPeer);
-
-    const handleUnload = () => {
-      endCall();
-      newPeer.destroy();
-      setPeer(null);
-      setPeerId(null);
-    };
-
-    window.addEventListener('beforeunload', handleUnload);
     return () => {
-      window.removeEventListener('beforeunload', handleUnload);
-      newPeer.destroy();
+      p.destroy();
+      endCall();
     };
   }, [role]);
 
-  const callPeer = () => {
+  // --- Start Call ---
+  const startCall = () => {
     if (!peer || !remotePeerId) return;
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
         localStreamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
         const outgoingCall = peer.call(remotePeerId, stream);
         outgoingCall.on('stream', remoteStream => {
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
         });
+
         setCall(outgoingCall);
-      });
+      })
+      .catch(console.error);
   };
 
+  // --- End Call ---
   const endCall = () => {
     call?.close();
-    localStreamRef.current?.getTracks().forEach(track => track.stop());
-    screenStreamRef.current?.getTracks().forEach(track => track.stop());
+    localStreamRef.current?.getTracks().forEach(t => t.stop());
+    screenStreamRef.current?.getTracks().forEach(t => t.stop());
+
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
 
@@ -118,25 +297,29 @@ const VideoCall = () => {
     setIsScreenSharing(false);
   };
 
+  // --- Toggle Mute ---
   const toggleMute = () => {
-    const audioTrack = localStreamRef.current?.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      setIsMuted(!audioTrack.enabled);
-    }
+    const track = localStreamRef.current?.getAudioTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setIsMuted(!track.enabled);
   };
 
+  // --- Toggle Video ---
   const toggleVideo = () => {
-    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
-    if (videoTrack) {
-      videoTrack.enabled = !videoTrack.enabled;
-      setIsVideoHidden(!videoTrack.enabled);
-    }
+    const track = localStreamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setIsVideoHidden(!track.enabled);
   };
 
+  // --- Screen Share Logic ---
   const toggleScreenShare = async () => {
-    if (isScreenSharing) stopScreenShare();
-    else startScreenShare();
+    if (isScreenSharing) {
+      stopScreenShare();
+    } else {
+      await startScreenShare();
+    }
   };
 
   const startScreenShare = async () => {
@@ -145,48 +328,52 @@ const VideoCall = () => {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      const audioContext = new AudioContext();
-      const destination = audioContext.createMediaStreamDestination();
+      const audioCtx = new AudioContext();
+      const dest = audioCtx.createMediaStreamDestination();
 
-      if (screenStream.getAudioTracks().length > 0) {
-        const screenAudio = audioContext.createMediaStreamSource(screenStream);
-        screenAudio.connect(destination);
+      if (screenStream.getAudioTracks().length) {
+        const screenAudio = audioCtx.createMediaStreamSource(screenStream);
+        screenAudio.connect(dest);
       }
-
-      if (micStream.getAudioTracks().length > 0) {
-        const micAudio = audioContext.createMediaStreamSource(micStream);
-        micAudio.connect(destination);
+      if (micStream.getAudioTracks().length) {
+        const micAudio = audioCtx.createMediaStreamSource(micStream);
+        micAudio.connect(dest);
       }
 
       const combinedStream = new MediaStream([
         ...screenStream.getVideoTracks(),
-        ...destination.stream.getAudioTracks(),
+        ...dest.stream.getAudioTracks(),
       ]);
 
       screenStreamRef.current = combinedStream;
 
-      const sender = call.peerConnection.getSenders().find((s: any) => s.track.kind === 'video');
-      if (sender) sender.replaceTrack(combinedStream.getVideoTracks()[0]);
+      const videoSender = call.peerConnection.getSenders().find(s => s.track?.kind === 'video');
+      if (videoSender) videoSender.replaceTrack(combinedStream.getVideoTracks()[0]);
 
-      const audioSender = call.peerConnection.getSenders().find((s: any) => s.track.kind === 'audio');
-      if (audioSender && combinedStream.getAudioTracks().length > 0)
+      const audioSender = call.peerConnection.getSenders().find(s => s.track?.kind === 'audio');
+      if (audioSender && combinedStream.getAudioTracks()[0]) {
         audioSender.replaceTrack(combinedStream.getAudioTracks()[0]);
+      }
 
       if (localVideoRef.current) localVideoRef.current.srcObject = combinedStream;
-      screenStream.getVideoTracks()[0].onended = () => stopScreenShare();
+      screenStream.getVideoTracks()[0].onended = stopScreenShare;
 
       setIsScreenSharing(true);
-    } catch (error) {
-      console.error('Error starting screen share:', error);
+    } catch (err) {
+      console.error('Screen share error:', err);
     }
   };
 
   const stopScreenShare = () => {
-    screenStreamRef.current?.getTracks().forEach(track => track.stop());
-    const sender = call?.peerConnection.getSenders().find((s: any) => s.track.kind === 'video');
-    if (sender && localStreamRef.current) {
-      sender.replaceTrack(localStreamRef.current.getVideoTracks()[0]);
-      if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+    screenStreamRef.current?.getTracks().forEach(t => t.stop());
+    if (!call || !localStreamRef.current) return;
+
+    const videoSender = call.peerConnection.getSenders().find(s => s.track?.kind === 'video');
+    if (videoSender) {
+      videoSender.replaceTrack(localStreamRef.current.getVideoTracks()[0]);
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
     }
     setIsScreenSharing(false);
   };
@@ -267,7 +454,7 @@ const VideoCall = () => {
               className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button
-              onClick={callPeer}
+              onClick={startCall}
               className="bg-blue-600 hover:bg-blue-700 transition px-4 py-2 rounded-lg text-white flex items-center gap-2"
             >
               <Phone size={16} /> Connect
@@ -325,7 +512,7 @@ const VideoCall = () => {
         <CinemaWrapper
           key={0}
           videoElement={remoteVideoRef.current as any}
-          videoStream={remoteStreamRef.current as any}
+          videoStream={screenStreamRef.current as any}
         />
       )}
     </div>
