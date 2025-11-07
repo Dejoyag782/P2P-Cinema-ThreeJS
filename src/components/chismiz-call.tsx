@@ -123,14 +123,22 @@ export default function ChismizCall() {
 
             // Request screen stream (with audio)
             // ✅ Replace this section inside startScreenShare()
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true, // works only for tab audio in Chrome
+            });
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // Combine both video (screen) + audio (microphone) tracks
+            // Combine both if available
+            const audioTracks = [
+            ...screenStream.getAudioTracks(),
+            ...micStream.getAudioTracks(),
+            ];
             const combinedStream = new MediaStream([
-            ...screenStream.getTracks(),
-            ...micStream.getTracks(),
+            ...screenStream.getVideoTracks(),
+            ...audioTracks,
             ]);
+
 
 
             screenStreamRef.current = combinedStream;
