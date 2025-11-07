@@ -1,5 +1,6 @@
 import "./App.css";
-import VideoCall from "./components/video-call";
+import ChismizCall from "./components/chismiz-call";
+// import VideoCall from "./components/video-call";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
 
@@ -54,7 +55,8 @@ function App() {
   }
 
   return (
-    <VideoCall />
+    // <VideoCall />
+    <ChismizCall />
   );
 }
 
