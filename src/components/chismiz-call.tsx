@@ -123,21 +123,23 @@ export default function ChismizCall() {
 
             // Request screen stream (with audio)
             // ✅ Replace this section inside startScreenShare()
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: true, // works only for tab audio in Chrome
-            });
+            const ctx = new AudioContext();
+            const destination = ctx.createMediaStreamDestination();
+
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // Combine both if available
-            const audioTracks = [
-            ...screenStream.getAudioTracks(),
-            ...micStream.getAudioTracks(),
-            ];
+            const screenSource = ctx.createMediaStreamSource(screenStream);
+            const micSource = ctx.createMediaStreamSource(micStream);
+
+            screenSource.connect(destination);
+            micSource.connect(destination);
+
             const combinedStream = new MediaStream([
             ...screenStream.getVideoTracks(),
-            ...audioTracks,
+            ...destination.stream.getAudioTracks(),
             ]);
+
 
 
 
@@ -315,7 +317,7 @@ export default function ChismizCall() {
             End Call
         </button>
 
-        {isCalling && !isSharingScreen && (
+        {!isSharingScreen && (
             <button
             onClick={startScreenShare}
             className="px-6 py-2 rounded-lg bg-yellow-500 text-white font-bold border-b-4 border-yellow-700 hover:bg-yellow-400 min-w-40 active:translate-y-1 transition-all"
@@ -324,7 +326,7 @@ export default function ChismizCall() {
             </button>
         )}
 
-        {isCalling && isSharingScreen && (
+        {isSharingScreen && (
             <button
             onClick={stopScreenShare}
             className="px-6 py-2 rounded-lg bg-orange-500 text-white font-bold border-b-4 border-orange-700 hover:bg-orange-400 min-w-40 active:translate-y-1 transition-all"
