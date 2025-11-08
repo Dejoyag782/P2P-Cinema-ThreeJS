@@ -8,6 +8,7 @@ interface CinemaVideoProps {
   width?: number;
   height?: number;
   modelUrl?: string;
+  isHost?: boolean;
 }
 
 const CinemaVideo: React.FC<CinemaVideoProps> = ({
@@ -16,6 +17,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
   width = window.innerWidth,
   height = window.innerHeight,
   modelUrl = "/models/cinema.glb",
+  isHost = false,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -24,15 +26,17 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
 
     // Create video element if not provided
     const video = videoElement || document.createElement('video');
+    console.log('isHost', isHost);
     video.crossOrigin = 'anonymous';
     video.loop = true;
-    video.muted = true;
+    video.muted = isHost;
     video.playsInline = true;
 
     // Handle video stream
     if (videoStream) {
       console.log('🎥 Binding MediaStream to video element...');
       video.srcObject = videoStream;
+      video.muted = isHost;
       video.onloadedmetadata = () => {
         video.play().catch(err => console.warn('Autoplay blocked:', err));
       };
@@ -124,7 +128,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
       renderer.dispose();
       scene.clear();
     };
-  }, [videoStream, modelUrl]);
+  }, [videoStream, modelUrl, isHost]);
 
 
   return (
