@@ -477,6 +477,7 @@ export default function VideoCall() {
           key={1}          
           videoElement={localVideoRef.current as any}
           videoStream={localStreamRef.current as any}
+          isHost={true}
         />
       )}
       {mode === 'join' && (
@@ -484,6 +485,7 @@ export default function VideoCall() {
           key={0}
           videoElement={remoteVideoRef.current as any}
           videoStream={remoteStreamRef.current as any}
+          isHost={false}
         />
       )}
     </div>

@@ -8,6 +8,7 @@ interface CinemaVideoProps {
   width?: number;
   height?: number;
   modelUrl?: string;
+  isHost?: boolean;
 }
 
 const CinemaVideo: React.FC<CinemaVideoProps> = ({
@@ -16,6 +17,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
   width = window.innerWidth,
   height = window.innerHeight,
   modelUrl = "/models/cinema.glb",
+  isHost = false,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -27,7 +29,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     console.log('video', video);
     video.crossOrigin = 'anonymous';
     video.loop = true;
-    video.muted = false;
+    video.muted = isHost ? false : true;
     video.playsInline = true;
 
     // Handle video stream

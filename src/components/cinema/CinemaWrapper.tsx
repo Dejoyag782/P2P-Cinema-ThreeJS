@@ -7,6 +7,7 @@ interface Props {
   videoStream?: MediaStream | null;
   width?: number;
   height?: number;
+  isHost?: boolean;
 }
 
 /**
@@ -18,6 +19,7 @@ export default function CinemaWrapper({
   videoStream,
   width = window.innerWidth,
   height = window.innerHeight,
+  isHost = false,
 }: Props) {
 
   console.log("videoElement", videoElement);
@@ -39,6 +41,7 @@ export default function CinemaWrapper({
         modelUrl={CinemaModel}
         width={width}
         height={height}
+        isHost={isHost}
       />
     </>
   );
