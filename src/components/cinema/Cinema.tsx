@@ -29,7 +29,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     console.log('video', video);
     video.crossOrigin = 'anonymous';
     video.loop = true;
-    video.muted = isHost ? false : true;
+    video.muted = isHost;
     video.playsInline = true;
 
     // Handle video stream
