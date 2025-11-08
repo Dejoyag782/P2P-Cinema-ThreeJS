@@ -114,64 +114,6 @@ export default function ChismizCall() {
     }
   };
 
-  // const startScreenShare = async () => {
-  //     try {
-  //         if (!callRef.current) {
-  //         alert("You must be in a call to share your screen.");
-  //         return;
-  //         }
-
-  //         // Request screen stream (with audio)
-  //         const screenStream = await navigator.mediaDevices.getDisplayMedia({
-  //         video: true,
-  //         audio: true,
-  //         });
-
-  //         screenStreamRef.current = screenStream;
-  //         setIsSharingScreen(true);
-
-  //         // Replace video track in the current call
-  //         const videoTrack = screenStream.getVideoTracks()[0];
-  //         const sender = callRef.current.peerConnection
-  //         .getSenders()
-  //         .find((s) => s.track?.kind === "video");
-  //         if (sender && videoTrack) sender.replaceTrack(videoTrack);
-
-  //         // Update local video preview
-  //         if (localVideoRef.current) {
-  //         localVideoRef.current.srcObject = screenStream;
-  //         }
-
-  //         // When user stops sharing manually (via browser prompt)
-  //         screenStream.getVideoTracks()[0].onended = () => {
-  //         stopScreenShare();
-  //         };
-  //     } catch (err) {
-  //         console.error("Screen share error:", err);
-  //     }
-  // };
-
-  // const stopScreenShare = async () => {
-  //     if (!isSharingScreen || !localStreamRef.current || !callRef.current) return;
-
-  //     // Stop the screen stream
-  //     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
-  //     screenStreamRef.current = null;
-  //     setIsSharingScreen(false);
-
-  //     // Restore camera video track
-  //     const cameraTrack = localStreamRef.current.getVideoTracks()[0];
-  //     const sender = callRef.current.peerConnection
-  //         .getSenders()
-  //         .find((s) => s.track?.kind === "video");
-  //     if (sender && cameraTrack) sender.replaceTrack(cameraTrack);
-
-  //     // Update preview
-  //     if (localVideoRef.current) {
-  //         localVideoRef.current.srcObject = localStreamRef.current;
-  //     }
-  // };
-
   const startScreenShare = async () => {
     try {
       if (!callRef.current) {
