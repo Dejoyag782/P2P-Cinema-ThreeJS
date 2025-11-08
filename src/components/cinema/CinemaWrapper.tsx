@@ -36,8 +36,8 @@ export default function CinemaWrapper({
           ? "cinema-element"
           : "cinema-default"
       }
-      videoElement={videoElement}
-        videoStream={videoStream}
+      videoElement={videoElement as any}
+        videoStream={videoStream as any}
         modelUrl={CinemaModel}
         width={width}
         height={height}

@@ -26,23 +26,17 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
 
     // Create video element if not provided
     const video = videoElement || document.createElement('video');
-    console.log('video', video);
+    console.log('isHost', isHost);
     video.crossOrigin = 'anonymous';
     video.loop = true;
+    video.muted = isHost;
     video.playsInline = true;
-
-    useEffect(() => {
-      if (isHost) {
-        video.muted = false;
-      } else {
-        video.muted = true;
-      }
-    }, [isHost]);
 
     // Handle video stream
     if (videoStream) {
       console.log('🎥 Binding MediaStream to video element...');
       video.srcObject = videoStream;
+      video.muted = isHost;
       video.onloadedmetadata = () => {
         video.play().catch(err => console.warn('Autoplay blocked:', err));
       };
@@ -134,7 +128,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
       renderer.dispose();
       scene.clear();
     };
-  }, [videoStream, modelUrl]);
+  }, [videoStream, modelUrl, isHost]);
 
 
   return (
