@@ -114,79 +114,159 @@ export default function ChismizCall() {
     }
   };
 
+  // const startScreenShare = async () => {
+  //     try {
+  //         if (!callRef.current) {
+  //         alert("You must be in a call to share your screen.");
+  //         return;
+  //         }
+
+  //         // Request screen stream (with audio)
+  //         const screenStream = await navigator.mediaDevices.getDisplayMedia({
+  //         video: true,
+  //         audio: true,
+  //         });
+
+  //         screenStreamRef.current = screenStream;
+  //         setIsSharingScreen(true);
+
+  //         // Replace video track in the current call
+  //         const videoTrack = screenStream.getVideoTracks()[0];
+  //         const sender = callRef.current.peerConnection
+  //         .getSenders()
+  //         .find((s) => s.track?.kind === "video");
+  //         if (sender && videoTrack) sender.replaceTrack(videoTrack);
+
+  //         // Update local video preview
+  //         if (localVideoRef.current) {
+  //         localVideoRef.current.srcObject = screenStream;
+  //         }
+
+  //         // When user stops sharing manually (via browser prompt)
+  //         screenStream.getVideoTracks()[0].onended = () => {
+  //         stopScreenShare();
+  //         };
+  //     } catch (err) {
+  //         console.error("Screen share error:", err);
+  //     }
+  // };
+
+  // const stopScreenShare = async () => {
+  //     if (!isSharingScreen || !localStreamRef.current || !callRef.current) return;
+
+  //     // Stop the screen stream
+  //     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+  //     screenStreamRef.current = null;
+  //     setIsSharingScreen(false);
+
+  //     // Restore camera video track
+  //     const cameraTrack = localStreamRef.current.getVideoTracks()[0];
+  //     const sender = callRef.current.peerConnection
+  //         .getSenders()
+  //         .find((s) => s.track?.kind === "video");
+  //     if (sender && cameraTrack) sender.replaceTrack(cameraTrack);
+
+  //     // Update preview
+  //     if (localVideoRef.current) {
+  //         localVideoRef.current.srcObject = localStreamRef.current;
+  //     }
+  // };
+
   const startScreenShare = async () => {
-        try {
-            if (!callRef.current) {
-            alert("You must be in a call to share your screen.");
-            return;
-            }
+    try {
+      if (!callRef.current) {
+        alert("You must be in a call to share your screen.");
+        return;
+      }
 
-            // Request screen stream (with audio)
-            // ✅ Replace this section inside startScreenShare()
-            const ctx = new AudioContext();
-            const destination = ctx.createMediaStreamDestination();
+      // Request screen stream (try to include system audio)
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true, // Will only work for tab audio on Chrome/Edge
+      });
 
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-            const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Request mic audio
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
 
-            const screenSource = ctx.createMediaStreamSource(screenStream);
-            const micSource = ctx.createMediaStreamSource(micStream);
+      // --- Combine system audio (if any) and mic audio ---
+      const audioContext = new AudioContext();
+      const destination = audioContext.createMediaStreamDestination();
 
-            screenSource.connect(destination);
-            micSource.connect(destination);
+      const hasScreenAudio = screenStream.getAudioTracks().length > 0;
 
-            const combinedStream = new MediaStream([
-            ...screenStream.getVideoTracks(),
-            ...destination.stream.getAudioTracks(),
-            ]);
+      if (hasScreenAudio) {
+        const screenAudioSource = audioContext.createMediaStreamSource(screenStream);
+        screenAudioSource.connect(destination);
+      }
 
+      const micAudioSource = audioContext.createMediaStreamSource(micStream);
+      micAudioSource.connect(destination);
 
+      // Combine video + mixed audio
+      const combinedStream = new MediaStream([
+        ...screenStream.getVideoTracks(),
+        ...destination.stream.getAudioTracks(),
+      ]);
 
+      screenStreamRef.current = screenStream;
+      setIsSharingScreen(true);
 
-            screenStreamRef.current = combinedStream;
-            setIsSharingScreen(true);
+      // --- Replace the video track in the call ---
+      const videoTrack = combinedStream.getVideoTracks()[0];
+      const sender = callRef.current.peerConnection
+        .getSenders()
+        .find((s) => s.track?.kind === "video");
+      if (sender && videoTrack) sender.replaceTrack(videoTrack);
 
-            // Replace video track in the current call
-            const videoTrack = screenStream.getVideoTracks()[0];
-            const sender = callRef.current.peerConnection
-            .getSenders()
-            .find((s) => s.track?.kind === "video");
-            if (sender && videoTrack) sender.replaceTrack(videoTrack);
+      // --- Replace the audio track (optional but improves consistency) ---
+      const audioTrack = combinedStream.getAudioTracks()[0];
+      const audioSender = callRef.current.peerConnection
+        .getSenders()
+        .find((s) => s.track?.kind === "audio");
+      if (audioSender && audioTrack) audioSender.replaceTrack(audioTrack);
 
-            // Update local video preview
-            if (localVideoRef.current) {
-            localVideoRef.current.srcObject = screenStream;
-            }
+      // Update local preview
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = combinedStream;
+      }
 
-            // When user stops sharing manually (via browser prompt)
-            screenStream.getVideoTracks()[0].onended = () => {
-            stopScreenShare();
-            };
-        } catch (err) {
-            console.error("Screen share error:", err);
-        }
-    };
+      // When user stops sharing manually (via browser prompt)
+      screenStream.getVideoTracks()[0].onended = () => {
+        stopScreenShare();
+      };
+    } catch (err) {
+      console.error("Screen share error:", err);
+    }
+  };
 
-    const stopScreenShare = async () => {
-        if (!isSharingScreen || !localStreamRef.current || !callRef.current) return;
+  const stopScreenShare = async () => {
+    if (!isSharingScreen || !localStreamRef.current || !callRef.current) return;
 
-        // Stop the screen stream
-        screenStreamRef.current?.getTracks().forEach((track) => track.stop());
-        screenStreamRef.current = null;
-        setIsSharingScreen(false);
+    // Stop the screen stream
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+    screenStreamRef.current = null;
+    setIsSharingScreen(false);
 
-        // Restore camera video track
-        const cameraTrack = localStreamRef.current.getVideoTracks()[0];
-        const sender = callRef.current.peerConnection
-            .getSenders()
-            .find((s) => s.track?.kind === "video");
-        if (sender && cameraTrack) sender.replaceTrack(cameraTrack);
+    // Restore camera tracks
+    const cameraVideoTrack = localStreamRef.current.getVideoTracks()[0];
+    const cameraAudioTrack = localStreamRef.current.getAudioTracks()[0];
 
-        // Update preview
-        if (localVideoRef.current) {
-            localVideoRef.current.srcObject = localStreamRef.current;
-        }
-    };
+    const senders = callRef.current.peerConnection.getSenders();
+
+    const videoSender = senders.find((s) => s.track?.kind === "video");
+    if (videoSender && cameraVideoTrack) videoSender.replaceTrack(cameraVideoTrack);
+
+    const audioSender = senders.find((s) => s.track?.kind === "audio");
+    if (audioSender && cameraAudioTrack) audioSender.replaceTrack(cameraAudioTrack);
+
+    // Restore local video preview
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+  };
+
 
 
   // Step 1: Landing page
@@ -292,17 +372,7 @@ export default function ChismizCall() {
 
       </div>
 
-      {/* {mode === "join" && (
-        <input
-          type="text"
-          placeholder="Enter host ID"
-          value={remoteId}
-          onChange={(e) => setRemoteId(e.target.value)}
-          className="w-80 p-3 rounded-lg mt-8 border border-teal-400 shadow-inner bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500 mb-6"
-        />
-      )} */}
-
-     <div className="flex gap-4 lg:mt-6 mt-20">
+      <div className="flex gap-4 lg:mt-6 mt-20">
         <button
             onClick={startCall}
             className={`px-6 py-2 rounded-lg ${isCalling ? 'bg-slate-500' : 'bg-teal-500'} text-white font-bold border-b-4 border-teal-700 hover:bg-teal-400 min-w-40 active:translate-y-1 transition-all`}
@@ -334,8 +404,7 @@ export default function ChismizCall() {
             Return to Camera
             </button>
         )}
-        </div>
-
+      </div>
 
     </div>
   );
