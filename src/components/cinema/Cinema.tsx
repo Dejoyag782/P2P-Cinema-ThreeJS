@@ -24,9 +24,10 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
 
     // Create video element if not provided
     const video = videoElement || document.createElement('video');
+    console.log('video', video);
     video.crossOrigin = 'anonymous';
     video.loop = true;
-    video.muted = true;
+    video.muted = false;
     video.playsInline = true;
 
     // Handle video stream

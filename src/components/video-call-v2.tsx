@@ -65,7 +65,10 @@ export default function VideoCall() {
             if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
             call.on("stream", (remoteStream) => {
-              if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+              if (remoteVideoRef.current){ 
+                remoteVideoRef.current.srcObject = remoteStream;
+                remoteStreamRef.current = remoteStream;
+              };
             });
 
             callRef.current = call;
