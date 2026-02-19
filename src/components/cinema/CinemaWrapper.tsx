@@ -8,6 +8,7 @@ interface Props {
   width?: number;
   height?: number;
   isHost?: boolean;
+  initialCameraPosition?: [number, number, number];
 }
 
 /**
@@ -20,6 +21,7 @@ export default function CinemaWrapper({
   width = window.innerWidth,
   height = window.innerHeight,
   isHost = false,
+  initialCameraPosition = [0, 3, 3.5],
 }: Props) {
 
   console.log("videoElement", videoElement);
@@ -42,6 +44,7 @@ export default function CinemaWrapper({
         width={width}
         height={height}
         isHost={isHost}
+        initialCameraPosition={initialCameraPosition}
       />
     </>
   );

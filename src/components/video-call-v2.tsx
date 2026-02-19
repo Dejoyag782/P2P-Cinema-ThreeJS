@@ -3,6 +3,82 @@ import Peer, { MediaConnection, DataConnection } from "peerjs";
 import CinemaWrapper from "./cinema/CinemaWrapper";
 import { Copy, GalleryThumbnails, MessageCircleMore, Mic, MicOff, Phone, ScreenShare, Settings, User, Video, VideoOff, XCircle } from "lucide-react";
 
+type SeatOption = {
+  id: string;
+  label: string;
+  row: string;
+  description: string;
+  cameraPosition: [number, number, number];
+};
+
+const SEAT_X_POSITIONS = [
+  -5.50,
+  -5.15,
+  -4.80,
+  -4.45,
+  -4.10,
+  -3.75,
+  -3.50,
+  -3.15,
+  -2.1,
+  -1.75,
+  -1.4,
+  -1.05,
+  -0.7,
+  -0.35,
+  0,
+  0.35,
+  0.7,
+  1.05,
+  1.4,
+  1.75,
+  2.1,
+  3.15,
+  3.50,
+  3.75,
+  4.10,
+  4.45,
+  4.80,
+  5.15,
+  5.50
+];
+const SEAT_ROWS: { key: SeatOption["row"]; label: string; y: number; z: number; maxSeats: number }[] = [
+  { key: "front2", label: "Front Row", y: 1, z: -1, maxSeats: 29 },
+  { key: "front1", label: "Front Row", y: 1.3, z: -0.3, maxSeats: 29 },
+  { key: "front", label: "Front Row", y: 1.6, z: 0.4, maxSeats: 29 },
+  { key: "mid4", label: "Middle Row", y: 2.0, z: 1.1, maxSeats: 29 },
+  { key: "mid3", label: "Middle Row", y: 2.3, z: 1.9, maxSeats: 29 },
+  { key: "mid2", label: "Middle Row", y: 2.7, z: 2.6, maxSeats: 29 },
+  { key: "mid1", label: "Middle Row", y: 3, z: 3.3, maxSeats: 29 },
+  { key: "back4", label: "Back Row", y: 3.4, z: 4, maxSeats: 29 },
+  { key: "back3", label: "Back Row", y: 3.7, z: 4.7, maxSeats: 25 },
+  { key: "back2", label: "Back Row", y: 3.9, z: 5.4, maxSeats: 23 },
+  { key: "back", label: "Back Row", y: 4.2, z: 6, maxSeats: 9 },
+];
+
+const getCenteredSeatPositions = (maxSeats: number) => {
+  const clamped = Math.max(1, Math.min(SEAT_X_POSITIONS.length, maxSeats));
+  const middleIndex = Math.floor(SEAT_X_POSITIONS.length / 2);
+  const half = Math.floor(clamped / 2);
+  const start = Math.max(0, middleIndex - half);
+  return SEAT_X_POSITIONS.slice(start, start + clamped);
+};
+
+const SEAT_OPTIONS: SeatOption[] = SEAT_ROWS.flatMap((row) =>
+  getCenteredSeatPositions(row.maxSeats).map((x, index) => {
+    const seatNumber = index + 1;
+    const isCenter = x === 0;
+    const sideLabel = x < 0 ? "L" : x > 0 ? "R" : "C";
+    return {
+      id: `${row.key}-${seatNumber}`,
+      label: `${row.label} ${sideLabel}${seatNumber}`,
+      row: row.key,
+      description: isCenter ? "Centered view" : x < 0 ? "Left angle view" : "Right angle view",
+      cameraPosition: [x, row.y, row.z],
+    };
+  })
+);
+
 export default function VideoCall() {
   const [mode, setMode] = useState<null | "host" | "join">(null);
   const [peerId, setPeerId] = useState("");
@@ -10,7 +86,8 @@ export default function VideoCall() {
   const [peer, setPeer] = useState<Peer | null>(null);
   const [messages, setMessages] = useState<{ sender: string; text: string }[]>([]);
   const [inputMessage, setInputMessage] = useState("");
-  const [dataConn, setDataConn] = useState<DataConnection | null>(null);
+  const [viewerConnCount, setViewerConnCount] = useState(0);
+  const [connectedViewerIds, setConnectedViewerIds] = useState<string[]>([]);
 //   const [isCalling, setIsCalling] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoHidden, setIsVideoHidden] = useState(false);
@@ -20,6 +97,7 @@ export default function VideoCall() {
   const [messagesVisible, setMessagesVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [seatOptionsVisible, setSeatOptionsVisible] = useState(false);
+  const [selectedSeatId, setSelectedSeatId] = useState("mid-5");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
 
@@ -27,7 +105,76 @@ export default function VideoCall() {
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
-  const callRef = useRef<MediaConnection | null>(null);
+  const hostCallsRef = useRef<Map<string, MediaConnection>>(new Map());
+  const hostDataConnsRef = useRef<Map<string, DataConnection>>(new Map());
+  const joinerCallRef = useRef<MediaConnection | null>(null);
+  const joinerDataConnRef = useRef<DataConnection | null>(null);
+  const selectedSeat =
+    SEAT_OPTIONS.find((seat) => seat.id === selectedSeatId) ?? SEAT_OPTIONS[0];
+  const maxSeatsInRow = Math.max(
+    ...SEAT_ROWS.map((row) => SEAT_OPTIONS.filter((seat) => seat.row === row.key).length)
+  );
+  const seatButtonWidthRem = 2.5;
+  const seatGapRem = 0.25;
+  const seatPanelHorizontalPaddingRem = 2.5;
+  const seatPanelWidthRem =
+    maxSeatsInRow * seatButtonWidthRem +
+    Math.max(0, maxSeatsInRow - 1) * seatGapRem +
+    seatPanelHorizontalPaddingRem;
+
+  const syncHostViewerState = () => {
+    const viewerIds = Array.from(
+      new Set([
+        ...Array.from(hostCallsRef.current.keys()),
+        ...Array.from(hostDataConnsRef.current.keys()),
+      ])
+    ).sort();
+    setConnectedViewerIds(viewerIds);
+    setViewerConnCount(viewerIds.length);
+  };
+
+  const disconnectViewer = (viewerId: string) => {
+    const call = hostCallsRef.current.get(viewerId);
+    if (call) {
+      call.close();
+      hostCallsRef.current.delete(viewerId);
+    }
+
+    const conn = hostDataConnsRef.current.get(viewerId);
+    if (conn) {
+      conn.close();
+      hostDataConnsRef.current.delete(viewerId);
+    }
+
+    syncHostViewerState();
+  };
+
+  const ensureLocalStream = async () => {
+    if (localStreamRef.current) return localStreamRef.current;
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localStreamRef.current = stream;
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+    return stream;
+  };
+
+  const closeAllConnections = () => {
+    hostCallsRef.current.forEach((call) => call.close());
+    hostCallsRef.current.clear();
+
+    hostDataConnsRef.current.forEach((conn) => conn.close());
+    hostDataConnsRef.current.clear();
+
+    joinerCallRef.current?.close();
+    joinerCallRef.current = null;
+
+    joinerDataConnRef.current?.close();
+    joinerDataConnRef.current = null;
+
+    setViewerConnCount(0);
+    setConnectedViewerIds([]);
+  };
 
   const copyToClipboard = () => {
     if (peerId) {
@@ -47,45 +194,79 @@ export default function VideoCall() {
     }
   }, [messages]);
 
-  // Host mode: initialize peer and listen for connections
+  // Initialize peer for host or joiner mode
   useEffect(() => {
-    if (mode === "host") {
-      const p = new Peer();
-      setPeer(p);
+    if (!mode) return;
 
-      p.on("open", (id) => setPeerId(id));
+    const p = new Peer();
+    setPeer(p);
 
-      // Handle incoming call
-      p.on("call", (call) => {
-        navigator.mediaDevices
-          .getUserMedia({ video: true, audio: true })
-          .then((stream) => {
-            call.answer(stream);
-            localStreamRef.current = stream;
-            if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+    p.on("open", async (id) => {
+      setPeerId(id);
+      if (mode === "host") {
+        try {
+          await ensureLocalStream();
+        } catch (error) {
+          console.error("Failed to access host media:", error);
+        }
+      }
+    });
 
-            call.on("stream", (remoteStream) => {
-              if (remoteVideoRef.current){ 
-                remoteVideoRef.current.srcObject = remoteStream;
-                remoteStreamRef.current = remoteStream;
-              };
-            });
+    // Host receives calls from many joiners and answers each with host media.
+    p.on("call", async (call) => {
+      if (mode !== "host") return;
+      try {
+        const stream = await ensureLocalStream();
+        call.answer(stream);
+        hostCallsRef.current.set(call.peer, call);
+        syncHostViewerState();
 
-            callRef.current = call;
-          })
-          .catch(console.error);
-      });
-
-      // Handle incoming chat connection
-      p.on("connection", (conn) => {
-        setDataConn(conn);
-        conn.on("data", (data) => {
-          setMessages((prev) => [...prev, { sender: "Them", text: String(data) }]);
+        call.on("close", () => {
+          hostCallsRef.current.delete(call.peer);
+          syncHostViewerState();
         });
-      });
 
-      return () => p.destroy();
-    }
+        call.on("error", () => {
+          hostCallsRef.current.delete(call.peer);
+          syncHostViewerState();
+        });
+      } catch (error) {
+        console.error("Failed to answer incoming call:", error);
+      }
+    });
+
+    // Chat connections: host stores many, joiner stores one.
+    p.on("connection", (conn) => {
+      if (mode === "host") {
+        hostDataConnsRef.current.set(conn.peer, conn);
+        syncHostViewerState();
+        conn.on("data", (data) => {
+          setMessages((prev) => [...prev, { sender: conn.peer, text: String(data) }]);
+        });
+        conn.on("close", () => {
+          hostDataConnsRef.current.delete(conn.peer);
+          syncHostViewerState();
+        });
+        conn.on("error", () => {
+          hostDataConnsRef.current.delete(conn.peer);
+          syncHostViewerState();
+        });
+      } else {
+        joinerDataConnRef.current = conn;
+        conn.on("data", (data) => {
+          setMessages((prev) => [...prev, { sender: "Host", text: String(data) }]);
+        });
+      }
+    });
+
+    p.on("error", (error) => console.error("Peer error:", error));
+
+    return () => {
+      closeAllConnections();
+      p.destroy();
+      setPeer(null);
+      setPeerId("");
+    };
   }, [mode]);
 
   const startCall = () => {
@@ -101,48 +282,65 @@ export default function VideoCall() {
 
         call.on("stream", (remoteStream) => {
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+          remoteStreamRef.current = remoteStream;
         });
 
-        callRef.current = call;
+        joinerCallRef.current = call;
+        call.on("close", () => {
+          joinerCallRef.current = null;
+          remoteStreamRef.current = null;
+          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+        });
         // setIsCalling(true);
       })
       .catch(console.error);
 
     const conn = peer.connect(remoteId);
     conn.on("open", () => {
-      setDataConn(conn);
+      joinerDataConnRef.current = conn;
     });
     conn.on("data", (data) => {
-      setMessages((prev) => [...prev, { sender: "Them", text: String(data) }]);
+      setMessages((prev) => [...prev, { sender: "Host", text: String(data) }]);
+    });
+    conn.on("close", () => {
+      joinerDataConnRef.current = null;
     });
   };
 
   const endCall = () => {
-    if (callRef.current) {
-      callRef.current.close();
-      callRef.current = null;
-    }
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+    screenStreamRef.current = null;
+    setIsSharingScreen(false);
+
+    closeAllConnections();
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
     }
+    remoteStreamRef.current = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
-
-    if (dataConn) {
-      dataConn.close();
-      setDataConn(null);
-    }
     setMessages([]);
     setMode(null);
   };
 
   const sendMessage = () => {
-    if (inputMessage.trim() && dataConn) {
-      dataConn.send(inputMessage);
-      setMessages((prev) => [...prev, { sender: "You", text: inputMessage }]);
-      setInputMessage("");
+    const trimmed = inputMessage.trim();
+    if (!trimmed) return;
+
+    if (mode === "host") {
+      hostDataConnsRef.current.forEach((conn) => {
+        if (conn.open) conn.send(trimmed);
+      });
+      setMessages((prev) => [...prev, { sender: "Host", text: trimmed }]);
+    } else {
+      const conn = joinerDataConnRef.current;
+      if (!conn?.open) return;
+      conn.send(trimmed);
+      setMessages((prev) => [...prev, { sender: "You", text: trimmed }]);
     }
+
+    setInputMessage("");
   };
 
   const toggleScreenShare = async () => {
@@ -152,7 +350,9 @@ export default function VideoCall() {
 
   const startScreenShare = async () => {
     try {
-      if (!callRef.current) {
+      const hasAnyCall =
+        mode === "host" ? hostCallsRef.current.size > 0 : Boolean(joinerCallRef.current);
+      if (!hasAnyCall) {
         alert("You must be in a call to share your screen.");
         return;
       }
@@ -193,17 +393,33 @@ export default function VideoCall() {
 
       // --- Replace the video track in the call ---
       const videoTrack = combinedStream.getVideoTracks()[0];
-      const sender = callRef.current.peerConnection
-        .getSenders()
-        .find((s) => s.track?.kind === "video");
-      if (sender && videoTrack) sender.replaceTrack(videoTrack);
+      const replaceVideoInCall = (call: MediaConnection) => {
+        const sender = call.peerConnection
+          .getSenders()
+          .find((s) => s.track?.kind === "video");
+        if (sender && videoTrack) sender.replaceTrack(videoTrack);
+      };
+
+      if (mode === "host") {
+        hostCallsRef.current.forEach(replaceVideoInCall);
+      } else if (joinerCallRef.current) {
+        replaceVideoInCall(joinerCallRef.current);
+      }
 
       // --- Replace the audio track (optional but improves consistency) ---
       const audioTrack = combinedStream.getAudioTracks()[0];
-      const audioSender = callRef.current.peerConnection
-        .getSenders()
-        .find((s) => s.track?.kind === "audio");
-      if (audioSender && audioTrack) audioSender.replaceTrack(audioTrack);
+      const replaceAudioInCall = (call: MediaConnection) => {
+        const audioSender = call.peerConnection
+          .getSenders()
+          .find((s) => s.track?.kind === "audio");
+        if (audioSender && audioTrack) audioSender.replaceTrack(audioTrack);
+      };
+
+      if (mode === "host") {
+        hostCallsRef.current.forEach(replaceAudioInCall);
+      } else if (joinerCallRef.current) {
+        replaceAudioInCall(joinerCallRef.current);
+      }
 
       // Update local preview
       if (localVideoRef.current) {
@@ -220,7 +436,7 @@ export default function VideoCall() {
   };
 
   const stopScreenShare = async () => {
-    if (!isSharingScreen || !localStreamRef.current || !callRef.current) return;
+    if (!isSharingScreen || !localStreamRef.current) return;
 
     // Stop the screen stream
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -231,13 +447,20 @@ export default function VideoCall() {
     const cameraVideoTrack = localStreamRef.current.getVideoTracks()[0];
     const cameraAudioTrack = localStreamRef.current.getAudioTracks()[0];
 
-    const senders = callRef.current.peerConnection.getSenders();
+    const restoreInCall = (call: MediaConnection) => {
+      const senders = call.peerConnection.getSenders();
+      const videoSender = senders.find((s) => s.track?.kind === "video");
+      if (videoSender && cameraVideoTrack) videoSender.replaceTrack(cameraVideoTrack);
 
-    const videoSender = senders.find((s) => s.track?.kind === "video");
-    if (videoSender && cameraVideoTrack) videoSender.replaceTrack(cameraVideoTrack);
+      const audioSender = senders.find((s) => s.track?.kind === "audio");
+      if (audioSender && cameraAudioTrack) audioSender.replaceTrack(cameraAudioTrack);
+    };
 
-    const audioSender = senders.find((s) => s.track?.kind === "audio");
-    if (audioSender && cameraAudioTrack) audioSender.replaceTrack(cameraAudioTrack);
+    if (mode === "host") {
+      hostCallsRef.current.forEach(restoreInCall);
+    } else if (joinerCallRef.current) {
+      restoreInCall(joinerCallRef.current);
+    }
 
     // Restore local video preview
     if (localVideoRef.current) {
@@ -276,13 +499,8 @@ export default function VideoCall() {
                     <button onClick={() => setMode("host")} className="px-6 py-3 bg-blue-600 rounded-xl text-xl">
                       I’m the Host
                     </button>
-                    <button 
-                        onClick={() => {
-                        const p = new Peer();
-                        setPeer(p);
-                        p.on("open", () => setMode("join"));
-                        }} className="px-6 py-3 bg-green-600 rounded-xl text-xl"
-                        // disabled={!remoteId.trim()}
+                    <button
+                        onClick={() => setMode("join")} className="px-6 py-3 bg-green-600 rounded-xl text-xl"
                     >
                       I’m a Viewer
                     </button>
@@ -348,12 +566,47 @@ export default function VideoCall() {
       </button>
 
       {seatOptionsVisible && (
-        <div className="absolute top-49 right-6 bg-gray-900/85 text-white rounded-2xl p-5 w-100 space-y-4 shadow-lg z-50">
-            <div
-            className="lg:min-h-155 lg:max-h-155 max-h-50 min-h-50 overflow-y-hidden p-2 rounded mb-2"
-            >
-                Currently Under Development
-            </div>
+        <div
+          className="absolute top-49 right-6 bg-gray-900/85 text-white rounded-2xl p-5 space-y-4 shadow-lg z-50"
+          style={{ width: `${seatPanelWidthRem}rem` }}
+        >
+          <div className="text-sm text-gray-300">
+            Choose your seat. This updates your starting camera position in the theater.
+          </div>
+          <div className="lg:min-h-155 lg:max-h-155 max-h-50 min-h-50 overflow-y-auto space-y-3">
+            {SEAT_ROWS.map((row) => {
+              const rowSeats = SEAT_OPTIONS.filter((seat) => seat.row === row.key);
+              return (
+                <div key={row.key} className="space-y-2">
+                  {/* <div className="text-xs font-semibold tracking-wide text-gray-300 uppercase">{row.label}</div>   */}
+                  <div className="flex justify-center">
+                    <div
+                      className="grid gap-1"
+                      style={{ gridTemplateColumns: `repeat(${rowSeats.length}, minmax(2.5rem, 2.5rem))` }}
+                    >
+                      {rowSeats.map((seat) => {
+                        const isSelected = seat.id === selectedSeatId;
+                        return (
+                          <button
+                            key={seat.id}
+                            onClick={() => setSelectedSeatId(seat.id)}
+                            title={`${seat.label} - ${seat.description}`}
+                            className={`h-9 w-10 rounded-md border text-xs font-semibold transition ${
+                              isSelected
+                                ? "border-teal-400 bg-teal-500/30 text-teal-100"
+                                : "border-gray-700 bg-gray-800/70 text-gray-200 hover:bg-gray-700/70"
+                            }`}
+                          >
+                            {seat.label.split(" ").pop()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -408,12 +661,34 @@ export default function VideoCall() {
         </div>
 
         {mode === 'host' ? (
-          <div className="flex items-center justify-center bg-gray-800 p-3 rounded-lg mb-6">
-            <span className="text-sm text-gray-300 mr-2">Your ID:</span>
-            <span className="font-mono text-green-400 break-all">{peerId || 'Generating...'}</span>
-            <button onClick={copyToClipboard} className="ml-3 p-1.5 hover:bg-gray-700 rounded-md">
-              {copied ? <span className="text-green-400 text-xs">Copied!</span> : <Copy size={18} />}
-            </button>
+          <div className="bg-gray-800 p-3 rounded-lg mb-6 space-y-2">
+            <div className="flex items-center justify-center">
+              <span className="text-sm text-gray-300 mr-2">Your ID:</span>
+              <span className="font-mono text-green-400 break-all">{peerId || 'Generating...'}</span>
+              <button onClick={copyToClipboard} className="ml-3 p-1.5 hover:bg-gray-700 rounded-md">
+                {copied ? <span className="text-green-400 text-xs">Copied!</span> : <Copy size={18} />}
+              </button>
+            </div>
+            <div className="text-center text-sm text-gray-300">
+              Connected viewers: <span className="text-white font-semibold">{viewerConnCount}</span>
+            </div>
+            <div className="bg-gray-900/60 rounded-md p-2 max-h-28 overflow-y-auto">
+              {connectedViewerIds.length === 0 ? (
+                <div className="text-xs text-gray-400 text-center">No viewers connected</div>
+              ) : (
+                connectedViewerIds.map((viewerId) => (
+                  <div key={viewerId} className="flex items-center justify-between gap-2 py-1">
+                    <span className="text-xs text-gray-200 truncate">{viewerId}</span>
+                    <button
+                      onClick={() => disconnectViewer(viewerId)}
+                      className="shrink-0 px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col sm:flex-row items-center gap-2 mb-6">
@@ -433,7 +708,6 @@ export default function VideoCall() {
           </div>
         )}
 
-        {/* {callRef.current && ( */}
           <div className="flex flex-wrap justify-center gap-2 mb-4">
             <button onClick={endCall} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg flex items-center gap-2">
               <XCircle size={18} /> End
@@ -455,7 +729,6 @@ export default function VideoCall() {
               </button>
             )}
           </div>
-        {/* )} */}
 
         
       </div>
@@ -474,18 +747,20 @@ export default function VideoCall() {
 
       {mode === 'host' && (
         <CinemaWrapper
-          key={1}          
+          key={`host-${selectedSeat.id}`}
           videoElement={localVideoRef.current as any}
           videoStream={localStreamRef.current as any}
           isHost={true}
+          initialCameraPosition={selectedSeat.cameraPosition}
         />
       )}
       {mode === 'join' && (
         <CinemaWrapper
-          key={0}
+          key={`join-${selectedSeat.id}`}
           videoElement={remoteVideoRef.current as any}
           videoStream={remoteStreamRef.current as any}
           isHost={false}
+          initialCameraPosition={selectedSeat.cameraPosition}
         />
       )}
     </div>
