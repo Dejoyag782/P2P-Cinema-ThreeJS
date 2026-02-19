@@ -9,6 +9,7 @@ interface CinemaVideoProps {
   height?: number;
   modelUrl?: string;
   isHost?: boolean;
+  initialCameraPosition?: [number, number, number];
 }
 
 const CinemaVideo: React.FC<CinemaVideoProps> = ({
@@ -18,6 +19,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
   height = window.innerHeight,
   modelUrl = "/models/cinema.glb",
   isHost = false,
+  initialCameraPosition = [0, 3, 3.5],
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -51,7 +53,8 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     scene.background = new THREE.Color(0x07060a);
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
-    camera.position.set(0, 3, 3.5);
+    camera.position.set(...initialCameraPosition);
+    camera.lookAt(0, 3.3, -4);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -128,7 +131,7 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
       renderer.dispose();
       scene.clear();
     };
-  }, [videoStream, modelUrl, isHost]);
+  }, [videoStream, modelUrl, isHost, initialCameraPosition]);
 
 
   return (
