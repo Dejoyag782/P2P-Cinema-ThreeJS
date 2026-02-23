@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Peer, { MediaConnection, DataConnection } from "peerjs";
 import CinemaWrapper from "./cinema/CinemaWrapper";
 import { Copy, GalleryThumbnails, MessageCircleMore, Mic, MicOff, Phone, ScreenShare, Settings, User, Video, VideoOff, XCircle } from "lucide-react";
@@ -97,8 +97,12 @@ export default function VideoCall() {
   const [messagesVisible, setMessagesVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [seatOptionsVisible, setSeatOptionsVisible] = useState(false);
-  const [selectedSeatId, setSelectedSeatId] = useState("mid-5");
+  const [selectedSeatId, setSelectedSeatId] = useState("mid2-10");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
+  const [assetsProgress, setAssetsProgress] = useState(0);
+  const [gyroEnabled, setGyroEnabled] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
 
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -115,12 +119,18 @@ export default function VideoCall() {
     ...SEAT_ROWS.map((row) => SEAT_OPTIONS.filter((seat) => seat.row === row.key).length)
   );
   const seatButtonWidthRem = 2.5;
-  const seatGapRem = 0.25;
+  const seatGapRem = 0.400;
   const seatPanelHorizontalPaddingRem = 2.5;
   const seatPanelWidthRem =
     maxSeatsInRow * seatButtonWidthRem +
     Math.max(0, maxSeatsInRow - 1) * seatGapRem +
     seatPanelHorizontalPaddingRem;
+  const progressPercent = Math.round(Math.min(1, Math.max(0, assetsProgress)) * 100);
+  const progressBarWidth = Math.max(12, progressPercent);
+
+  useEffect(() => {
+    setIsMobile(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   const syncHostViewerState = () => {
     const viewerIds = Array.from(
@@ -484,48 +494,138 @@ export default function VideoCall() {
     }
   };
 
+  const handleAssetsProgress = useCallback(
+    (progress: { itemsLoaded: number; itemsTotal: number; ratio: number }) => {
+      if (!Number.isFinite(progress.ratio)) return;
+      setAssetsProgress(progress.ratio);
+    },
+    []
+  );
+
+  const handleAssetsLoaded = useCallback(() => {
+    setAssetsProgress(1);
+    setAssetsLoaded(true);
+  }, []);
+
+  const handleAssetsError = useCallback((error: unknown) => {
+    console.error("Asset load error:", error);
+    setAssetsLoaded(true);
+  }, []);
+
+  const toggleGyro = async () => {
+    if (!isMobile) return;
+    if (!gyroEnabled) {
+      const maybePermission = (DeviceOrientationEvent as unknown as {
+        requestPermission?: () => Promise<"granted" | "denied">;
+      }).requestPermission;
+      if (maybePermission) {
+        try {
+          const response = await maybePermission();
+          if (response !== "granted") return;
+        } catch (error) {
+          console.error("Gyro permission error:", error);
+          return;
+        }
+      }
+    }
+    setGyroEnabled((prev) => !prev);
+  };
+
+  useEffect(() => {
+    if (!mode) return;
+    setAssetsLoaded(false);
+    setAssetsProgress(0);
+    setGyroEnabled(false);
+  }, [mode]);
+
 
 
   // Step 1: Landing page
   if (!mode) {
   return (
-         <div className="relative w-screen h-screen bg-black overflow-hidden">
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-black/70 backdrop-blur-lg space-y-6 z-50">
-              <div className="grid grid-cols-2 gap-6 max-w-250 items-center justify-center">
-                <div className="flex bg-white/20 backdrop-blur-lg h-full rounded-2xl p-6 flex-col items-center justify-center space-y-6">
-                  <h1 className="text-5xl font-bold">🎥 Vinema 3D</h1>
-                  <p className="text-2xl">Are you a Host or Viewer?</p>
-                  <div className="flex space-x-4">
-                    <button onClick={() => setMode("host")} className="px-6 py-3 bg-blue-600 rounded-xl text-xl">
-                      I’m the Host
-                    </button>
-                    <button
-                        onClick={() => setMode("join")} className="px-6 py-3 bg-green-600 rounded-xl text-xl"
-                    >
-                      I’m a Viewer
-                    </button>
+        <div className="flex items-center justify-center h-screen bg-linear-to-b from-zinc-950 via-zinc-900 to-black">
+          <div className="absolute inset-0 flex items-center justify-center text-white bg-black/55 backdrop-blur-xl">
+            <div className="w-full max-w-5xl px-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left: Mode picker */}
+                <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl">
+                  <div className="absolute -top-24 -right-24 h-56 w-56 rounded-full bg-linear-to-br from-emerald-400/25 to-cyan-500/10 blur-2xl" />
+                  <div className="absolute -bottom-24 -left-24 h-56 w-56 rounded-full bg-linear-to-br from-rose-500/20 to-amber-400/10 blur-2xl" />
+
+                  <div className="relative space-y-6">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/80">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      Vinema 3D
+                    </div>
+
+                    <h1 className="text-4xl md:text-5xl font-semibold leading-tight">
+                      Choose your role.
+                    </h1>
+
+                    <p className="text-base text-white/80">
+                      Start a session as a host, or join instantly as a viewer.
+                    </p>
+
+                    <div className="flex flex-wrap gap-3 pt-2">
+                      <button
+                        onClick={() => setMode("host")}
+                        className="inline-flex items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-5 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-400/15 active:scale-[0.99]"
+                      >
+                        I’m the Host
+                      </button>
+
+                      <button
+                        onClick={() => setMode("join")}
+                        className="inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-400/10 px-5 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-400/15 active:scale-[0.99]"
+                      >
+                        I’m a Viewer
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70">
+                      <span className="h-2 w-2 rounded-full bg-cyan-300" />
+                      Peer-to-peer sessions • no centralized streaming
+                    </div>
                   </div>
                 </div>
-    
-                <div className="grid grid-cols-1 gap-6 text-white/90 h-full">
-                  <div className="bg-white/20 p-4 rounded-xl backdrop-blur-md">
-                    <h2 className="text-xl font-semibold mb-2">🌐 Powered by PeerJS</h2>
-                    <p className="text-sm leading-relaxed">
-                      Vinema 3D connects hosts and viewers directly using <strong>PeerJS</strong>, 
-                      enabling real-time, peer-to-peer video streaming without centralized servers.
+
+                {/* Right: Feature cards (same styling as your sample) */}
+                <div className="grid grid-cols-1 gap-6 text-white/90">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
+                    <div className="mb-3 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-400/15 text-emerald-200">
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6">
+                          <path d="M8 12h8M12 8v8" />
+                          <circle cx="12" cy="12" r="9" />
+                        </svg>
+                      </div>
+                      <h2 className="text-lg font-semibold">PeerJS powered</h2>
+                    </div>
+                    <p className="text-sm leading-relaxed text-white/70">
+                      Vinema 3D connects hosts and viewers directly using <strong>PeerJS</strong>,
+                      delivering real-time peer-to-peer streaming without centralized servers.
                     </p>
                   </div>
-                  <div className="bg-white/20 p-4 rounded-xl backdrop-blur-md">
-                    <h2 className="text-xl font-semibold mb-2">🎬 Immersive with Three.js</h2>
-                    <p className="text-sm leading-relaxed">
-                      Each viewing session takes place inside a 3D virtual environment — a digital theater powered by <strong>Three.js</strong>.
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
+                    <div className="mb-3 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-400/15 text-rose-200">
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6">
+                          <path d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                      </div>
+                      <h2 className="text-lg font-semibold">Three.js immersion</h2>
+                    </div>
+                    <p className="text-sm leading-relaxed text-white/70">
+                      Each session lives inside a 3D theater powered by <strong>Three.js</strong>,
+                      creating a shared cinematic space.
                     </p>
                   </div>
                 </div>
               </div>
+            </div>
           </div>
-          <CinemaWrapper/>
-          </div>
+        </div>
   );
 }
 
@@ -534,233 +634,386 @@ export default function VideoCall() {
   return (
 
     <div className="relative w-screen h-screen bg-black overflow-hidden">
-      <button
-        onClick={() => {setControlsVisible(!controlsVisible); setMessagesVisible(false); setSeatOptionsVisible(false)}}
-        className="absolute top-6 right-6 z-50 bg-gray-900/70 text-white rounded-full p-3 shadow-lg"
-      >
-         <div className="flex items-center">
-          <span role="img" aria-label="speech bubble"><Settings size={20}/></span>
-          <span className={controlsVisible ? "block ml-2" : "hidden"}>Settings</span>
+      {!assetsLoaded && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center text-white bg-black/55 backdrop-blur-xl">
+          <div className="w-full max-w-xl px-6">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl">
+              <div className="absolute -top-28 -left-24 h-56 w-56 rounded-full bg-linear-to-br from-cyan-400/25 to-blue-500/10 blur-2xl" />
+              <div className="relative space-y-6">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/80">
+                  <span className="h-2 w-2 rounded-full bg-cyan-300" />
+                  Vinema 3D
+                </div>
+                <h1 className="text-3xl md:text-4xl font-semibold leading-tight">
+                  Loading assets
+                </h1>
+                <p className="text-sm text-white/70">
+                  Preparing the 3D cinema environment.
+                </p>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-linear-to-r from-cyan-400 via-blue-400 to-indigo-400 transition-all"
+                    style={{ width: `${progressBarWidth}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs text-white/50">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 animate-ping rounded-full bg-cyan-300/80" />
+                    Optimizing shaders and streams
+                  </span>
+                  <span>{progressPercent}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
+      {/* === Floating action buttons (modern glass style) === */}
+      <button
+        onClick={() => {
+          setControlsVisible(!controlsVisible);
+          setMessagesVisible(false);
+          setSeatOptionsVisible(false);
+        }}
+        className="group absolute top-6 right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
+      >
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
+          <Settings size={18} />
+        </span>
+        <span
+          className={`text-sm font-medium tracking-wide transition-all ${
+            controlsVisible ? "max-w-[120px] opacity-100 ml-1" : "max-w-0 opacity-0 ml-0"
+          } overflow-hidden whitespace-nowrap`}
+        >
+          Settings
+        </span>
       </button>
 
       <button
-        onClick={() => {setMessagesVisible(!messagesVisible); setControlsVisible(false); setSeatOptionsVisible(false)}}
-        className="absolute top-20 right-6 z-50 bg-gray-900/70 text-white rounded-full p-3 shadow-lg"
+        onClick={() => {
+          setMessagesVisible(!messagesVisible);
+          setControlsVisible(false);
+          setSeatOptionsVisible(false);
+        }}
+        className="group absolute top-20 right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
       >
-        <div className="flex items-center">
-          <span role="img" aria-label="speech bubble"><MessageCircleMore size={20}/><div className="fixed top-21 right-6 bg-red-500 rounded-full px-1 text-xs">{messages.length}</div></span>
-          <span className={messagesVisible ? "block ml-2" : "hidden"}>Messages</span>
-        </div>
+        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
+          <MessageCircleMore size={18} />
+          {messages.length > 0 && (
+            <span className="absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full border border-white/15 bg-rose-500/80 px-1 text-[10px] font-semibold text-white shadow">
+              {messages.length}
+            </span>
+          )}
+        </span>
+
+        <span
+          className={`text-sm font-medium tracking-wide transition-all ${
+            messagesVisible ? "max-w-[120px] opacity-100 ml-1" : "max-w-0 opacity-0 ml-0"
+          } overflow-hidden whitespace-nowrap`}
+        >
+          Messages
+        </span>
       </button>
 
-      
       <button
-        onClick={() => {setSeatOptionsVisible(!seatOptionsVisible); setControlsVisible(false); setMessagesVisible(false)}}
-        className="absolute top-33.5 right-6 z-50 bg-gray-900/70 text-white rounded-full p-3 shadow-lg"
+        onClick={() => {
+          setSeatOptionsVisible(!seatOptionsVisible);
+          setControlsVisible(false);
+          setMessagesVisible(false);
+        }}
+        className="group absolute top-[8.4rem] right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
       >
-        <div className="flex items-center">
-          <span role="img" aria-label="speech bubble" title="Seat Movement"><GalleryThumbnails size={20}/></span>
-          <span className={seatOptionsVisible ? "block ml-2" : "hidden"}>Seats</span>
-        </div>
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
+          <GalleryThumbnails size={18} />
+        </span>
+        <span
+          className={`text-sm font-medium tracking-wide transition-all ${
+            seatOptionsVisible ? "max-w-[120px] opacity-100 ml-1" : "max-w-0 opacity-0 ml-0"
+          } overflow-hidden whitespace-nowrap`}
+        >
+          Seats
+        </span>
       </button>
 
+      {/* === Seat options panel === */}
       {seatOptionsVisible && (
         <div
-          className="absolute top-49 right-6 bg-gray-900/85 text-white rounded-2xl p-5 space-y-4 shadow-lg z-50"
+          className="absolute top-[12.2rem] right-6 z-50 w-[22rem] max-w-[85vw] overflow-hidden rounded-3xl border border-white/10 bg-white/5 text-white shadow-2xl backdrop-blur-xl"
           style={{ width: `${seatPanelWidthRem}rem` }}
         >
-          <div className="text-sm text-gray-300">
-            Choose your seat. This updates your starting camera position in the theater.
+          <div className="relative p-5">
+            <div className="absolute -top-16 -right-16 h-40 w-40 rounded-full bg-linear-to-br from-emerald-400/20 to-cyan-400/10 blur-2xl" />
+            <div className="relative space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/80">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                Seat selection
+              </div>
+              <p className="text-sm text-white/70">
+                Choose your seat. This updates your starting camera position in the theater.
+              </p>
+            </div>
           </div>
-          <div className="lg:min-h-155 lg:max-h-155 max-h-50 min-h-50 overflow-y-auto space-y-3">
-            {SEAT_ROWS.map((row) => {
-              const rowSeats = SEAT_OPTIONS.filter((seat) => seat.row === row.key);
-              return (
-                <div key={row.key} className="space-y-2">
-                  {/* <div className="text-xs font-semibold tracking-wide text-gray-300 uppercase">{row.label}</div>   */}
-                  <div className="flex justify-center">
-                    <div
-                      className="grid gap-1"
-                      style={{ gridTemplateColumns: `repeat(${rowSeats.length}, minmax(2.5rem, 2.5rem))` }}
-                    >
-                      {rowSeats.map((seat) => {
-                        const isSelected = seat.id === selectedSeatId;
-                        return (
-                          <button
-                            key={seat.id}
-                            onClick={() => setSelectedSeatId(seat.id)}
-                            title={`${seat.label} - ${seat.description}`}
-                            className={`h-9 w-10 rounded-md border text-xs font-semibold transition ${
-                              isSelected
-                                ? "border-teal-400 bg-teal-500/30 text-teal-100"
-                                : "border-gray-700 bg-gray-800/70 text-gray-200 hover:bg-gray-700/70"
-                            }`}
-                          >
-                            {seat.label.split(" ").pop()}
-                          </button>
-                        );
-                      })}
+
+          <div className="px-5 pb-5">
+            <div className="lg:min-h-155 lg:max-h-155 max-h-50 min-h-50 overflow-y-auto space-y-4 pr-1">
+              {SEAT_ROWS.map((row) => {
+                const rowSeats = SEAT_OPTIONS.filter((seat) => seat.row === row.key);
+                return (
+                  <div key={row.key} className="space-y-2">
+                    <div className="flex justify-center">
+                      <div
+                        className="grid gap-1.5"
+                        style={{ gridTemplateColumns: `repeat(${rowSeats.length}, minmax(2.5rem, 2.5rem))` }}
+                      >
+                        {rowSeats.map((seat) => {
+                          const isSelected = seat.id === selectedSeatId;
+                          return (
+                            <button
+                              key={seat.id}
+                              onClick={() => setSelectedSeatId(seat.id)}
+                              title={`${seat.label} - ${seat.description}`}
+                              className={`h-9 w-10 rounded-lg border text-xs font-semibold transition ${
+                                isSelected
+                                  ? "border-emerald-400/40 bg-emerald-400/15 text-emerald-200 shadow-[0_0_0_3px_rgba(52,211,153,0.12)]"
+                                  : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:border-white/15"
+                              }`}
+                            >
+                              {seat.label.split(" ").pop()}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
 
+      {/* === Messages panel === */}
       {messagesVisible && (
-        <div className="absolute top-35 right-6 bg-gray-900/85 text-white rounded-2xl p-5 w-100 space-y-4 shadow-lg z-50">
-            <div
-            className="lg:min-h-155 lg:max-h-155 max-h-50 min-h-50 overflow-y-hidden border border-gray-300 p-2 rounded mb-2"
-            >
-            {messages.map((msg, i) => (
+        <div className="absolute top-[8.4rem] right-6 z-50 w-[26rem] max-w-[92vw] overflow-hidden rounded-3xl border border-white/10 bg-white/5 text-white shadow-2xl backdrop-blur-xl">
+          <div className="relative p-5">
+            <div className="absolute -top-16 -right-16 h-40 w-40 rounded-full bg-linear-to-br from-rose-500/20 to-amber-400/10 blur-2xl" />
+            <div className="relative flex items-center justify-between">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/80">
+                <span className="h-2 w-2 rounded-full bg-rose-400" />
+                Messages
+              </div>
+              <div className="text-xs text-white/50">{messages.length} total</div>
+            </div>
+          </div>
+
+          <div className="px-5 pb-5 space-y-3">
+            <div className="lg:min-h-155 lg:max-h-155 max-h-50 min-h-50 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-3">
+              {messages.map((msg, i) => (
                 <div key={i} className={msg.sender === "You" ? "text-right" : "text-left"}>
-                <span
-                    className={`inline-block px-2 py-1 rounded mt-3 ${
-                    msg.sender === "You" ? "bg-teal-300/70" : "bg-gray-200/70"
+                  <span
+                    className={`inline-block max-w-[85%] px-3 py-2 rounded-2xl mt-2 text-sm border ${
+                      msg.sender === "You"
+                        ? "bg-emerald-400/15 border-emerald-400/20 text-emerald-100"
+                        : "bg-white/10 border-white/10 text-white/90"
                     }`}
-                >
-                    <strong>{msg.sender}: </strong>
+                  >
+                    <span className="block text-[11px] mb-0.5 text-white/60">
+                      {msg.sender}
+                    </span>
                     {msg.text}
-                </span>
+                  </span>
                 </div>
-            ))}
-            {/* 👇 This ensures scroll target is always at the bottom */}
-            <div ref={messagesEndRef} />
+              ))}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="flex gap-2">
-            <input
+              <input
                 type="text"
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                className="flex-1 p-2 border border-gray-300 rounded"
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:ring-2 focus:ring-emerald-400/30"
                 placeholder="Type a message..."
-            />
-            <button
+              />
+              <button
                 onClick={sendMessage}
-                className="px-4 py-2 bg-teal-500 text-white rounded hover:bg-teal-400"
-            >
+                className="rounded-xl border border-emerald-400/30 bg-emerald-400/15 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-400/20 active:scale-[0.99]"
+              >
                 Send
-            </button>
+              </button>
             </div>
+          </div>
         </div>
       )}
 
+      {/* === Controls panel === */}
       {controlsVisible && (
-      <div className="absolute top-20 right-6 bg-gray-900/85 text-white rounded-2xl p-5 w-100 space-y-4 shadow-lg z-50">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-semibold">🎥 Vinema 3D</h2>
-          <div className="flex items-center gap-2 text-sm">
-            <User size={16} />
-            <span className="capitalize text-gray-400">{mode || 'Generating...'}</span>
-          </div>
-        </div>
+        <div className="absolute top-20 right-6 z-50 w-[26rem] max-w-[92vw] overflow-hidden rounded-3xl border border-white/10 bg-white/5 text-white shadow-2xl backdrop-blur-xl">
+          <div className="relative p-5">
+            <div className="absolute -top-16 -right-16 h-40 w-40 rounded-full bg-linear-to-br from-amber-400/20 to-red-500/10 blur-2xl" />
+            <div className="relative flex items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/80">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                  Vinema 3D
+                </div>
+                <h2 className="mt-3 text-xl font-semibold">Session controls</h2>
+              </div>
 
-        {mode === 'host' ? (
-          <div className="bg-gray-800 p-3 rounded-lg mb-6 space-y-2">
-            <div className="flex items-center justify-center">
-              <span className="text-sm text-gray-300 mr-2">Your ID:</span>
-              <span className="font-mono text-green-400 break-all">{peerId || 'Generating...'}</span>
-              <button onClick={copyToClipboard} className="ml-3 p-1.5 hover:bg-gray-700 rounded-md">
-                {copied ? <span className="text-green-400 text-xs">Copied!</span> : <Copy size={18} />}
-              </button>
+              <div className="flex items-center gap-2 text-sm text-white/60">
+                <User size={16} />
+                <span className="capitalize">{mode || "Generating..."}</span>
+              </div>
             </div>
-            <div className="text-center text-sm text-gray-300">
-              Connected viewers: <span className="text-white font-semibold">{viewerConnCount}</span>
-            </div>
-            <div className="bg-gray-900/60 rounded-md p-2 max-h-28 overflow-y-auto">
-              {connectedViewerIds.length === 0 ? (
-                <div className="text-xs text-gray-400 text-center">No viewers connected</div>
-              ) : (
-                connectedViewerIds.map((viewerId) => (
-                  <div key={viewerId} className="flex items-center justify-between gap-2 py-1">
-                    <span className="text-xs text-gray-200 truncate">{viewerId}</span>
-                    <button
-                      onClick={() => disconnectViewer(viewerId)}
-                      className="shrink-0 px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700"
-                    >
-                      Disconnect
-                    </button>
+          </div>
+
+          <div className="px-5 pb-5 space-y-4">
+            {mode === "host" ? (
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs uppercase tracking-[0.18em] text-white/50">Your ID</div>
+                    <div className="font-mono text-sm text-emerald-200 break-all">{peerId || "Generating..."}</div>
                   </div>
-                ))
+                  <button
+                    onClick={copyToClipboard}
+                    className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/10"
+                  >
+                    {copied ? <span className="text-emerald-200">Copied</span> : <span className="inline-flex items-center gap-2"><Copy size={16} /> Copy</span>}
+                  </button>
+                </div>
+
+                <div className="text-sm text-white/70">
+                  Connected viewers: <span className="text-white font-semibold">{viewerConnCount}</span>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-2 max-h-28 overflow-y-auto">
+                  {connectedViewerIds.length === 0 ? (
+                    <div className="text-xs text-white/50 text-center py-3">No viewers connected</div>
+                  ) : (
+                    connectedViewerIds.map((viewerId) => (
+                      <div key={viewerId} className="flex items-center justify-between gap-2 py-1 px-2">
+                        <span className="text-xs text-white/80 truncate">{viewerId}</span>
+                        <button
+                          onClick={() => disconnectViewer(viewerId)}
+                          className="shrink-0 rounded-lg border border-rose-400/30 bg-rose-400/10 px-2 py-1 text-[11px] font-semibold text-rose-200 transition hover:bg-rose-400/15"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <input
+                  type="text"
+                  value={remoteId}
+                  onChange={(e) => setRemoteId(e.target.value)}
+                  placeholder="Enter host ID"
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:ring-2 focus:ring-cyan-400/30"
+                />
+                <button
+                  onClick={startCall}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-400/15 active:scale-[0.99]"
+                >
+                  <Phone size={16} /> Connect
+                </button>
+              </div>
+            )}
+
+            <div className="flex flex-wrap justify-center gap-2">
+              <button
+                onClick={endCall}
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-400/15 active:scale-[0.99]"
+              >
+                <XCircle size={18} /> End
+              </button>
+
+              <button
+                onClick={toggleMute}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10 active:scale-[0.99]"
+              >
+                {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+                {isMuted ? "Unmute" : "Mute"}
+              </button>
+
+              <button
+                onClick={toggleVideo}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10 active:scale-[0.99]"
+              >
+                {isVideoHidden ? <VideoOff size={18} /> : <Video size={18} />}
+                {isVideoHidden ? "Show" : "Hide"}
+              </button>
+
+              {mode === "host" && (
+                <button
+                  onClick={toggleScreenShare}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10 active:scale-[0.99]"
+                >
+                  <ScreenShare size={18} />
+                  {isSharingScreen ? "Stop Share" : "Share Screen"}
+                </button>
+              )}
+
+              {isMobile && (
+                <button
+                  onClick={toggleGyro}
+                  className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition active:scale-[0.99] ${
+                    gyroEnabled
+                      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/15"
+                      : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                  }`}
+                >
+                  {gyroEnabled ? "Gyro On" : "Enable Gyro"}
+                </button>
               )}
             </div>
           </div>
-        ) : (
-          <div className="flex flex-col sm:flex-row items-center gap-2 mb-6">
-            <input
-              type="text"
-              value={remoteId}
-              onChange={e => setRemoteId(e.target.value)}
-              placeholder="Enter host ID"
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              onClick={startCall}
-              className="bg-blue-600 hover:bg-blue-700 transition px-4 py-2 rounded-lg text-white flex items-center gap-2"
-            >
-              <Phone size={16} /> Connect
-            </button>
-          </div>
-        )}
-
-          <div className="flex flex-wrap justify-center gap-2 mb-4">
-            <button onClick={endCall} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg flex items-center gap-2">
-              <XCircle size={18} /> End
-            </button>
-            <button onClick={toggleMute} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg flex items-center gap-2">
-              {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
-              {isMuted ? 'Unmute' : 'Mute'}
-            </button>
-            <button onClick={toggleVideo} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg flex items-center gap-2">
-              {isVideoHidden ? <VideoOff size={18} /> : <Video size={18} />}
-              {isVideoHidden ? 'Show' : 'Hide'}
-            </button>
-
-            {/* Host-only screen share */}
-            {mode === 'host' && (
-              <button onClick={toggleScreenShare} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg flex items-center gap-2">
-                <ScreenShare size={18} />
-                {isSharingScreen ? 'Stop Share' : 'Share Screen'}
-              </button>
-            )}
-          </div>
-
-        
-      </div>
+        </div>
       )}
 
-      <div className="grid sm:grid-cols-2 gap-4 absolute bottom-0">
-        <div className="bg-gray-800 rounded-xl overflow-hidden">
-          <h3 className="text-center text-gray-400 py-2 text-sm">Local Video</h3>
-          <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video bg-black object-cover" />
+      {/* === Video grid (modern cards) === */}
+      <div className="grid sm:grid-cols-2 gap-4 absolute bottom-6 left-6 right-6 opacity-0">
+        <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl">
+          <div className="px-4 py-2 text-xs uppercase tracking-[0.18em] text-white/60 border-b border-white/10">
+            Local Video
+          </div>
+          <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video bg-black/40 object-cover" />
         </div>
-        <div className="bg-gray-800 rounded-xl overflow-hidden">
-          <h3 className="text-center text-gray-400 py-2 text-sm">Remote Video</h3>
-          <video ref={remoteVideoRef} autoPlay playsInline className="w-full aspect-video bg-black object-cover" />
+
+        <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl">
+          <div className="px-4 py-2 text-xs uppercase tracking-[0.18em] text-white/60 border-b border-white/10">
+            Remote Video
+          </div>
+          <video ref={remoteVideoRef} autoPlay playsInline className="w-full aspect-video bg-black/40 object-cover" />
         </div>
       </div>
 
       {mode === 'host' && (
         <CinemaWrapper
-          key={`host-${selectedSeat.id}`}
           videoElement={localVideoRef.current as any}
           videoStream={localStreamRef.current as any}
           isHost={true}
           initialCameraPosition={selectedSeat.cameraPosition}
+          enableGyro={gyroEnabled && isMobile}
+          onAssetsLoaded={handleAssetsLoaded}
+          onAssetsProgress={handleAssetsProgress}
+          onAssetsError={handleAssetsError}
         />
       )}
       {mode === 'join' && (
         <CinemaWrapper
-          key={`join-${selectedSeat.id}`}
           videoElement={remoteVideoRef.current as any}
           videoStream={remoteStreamRef.current as any}
           isHost={false}
           initialCameraPosition={selectedSeat.cameraPosition}
+          enableGyro={gyroEnabled && isMobile}
+          onAssetsLoaded={handleAssetsLoaded}
+          onAssetsProgress={handleAssetsProgress}
+          onAssetsError={handleAssetsError}
         />
       )}
     </div>
