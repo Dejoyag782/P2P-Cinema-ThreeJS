@@ -1010,9 +1010,9 @@ export default function VideoCall() {
             setMessagesVisible(false);
             setSeatOptionsVisible(false);
           }}
-          className="group absolute top-6 right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
+          className="group absolute top-4 right-4 sm:top-6 sm:right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-2 sm:px-3.5 sm:py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
         >
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
+          <span className="inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
             <Settings size={18} />
           </span>
           <span
@@ -1032,9 +1032,9 @@ export default function VideoCall() {
             setControlsVisible(false);
             setSeatOptionsVisible(false);
           }}
-          className="group absolute top-20 right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
+          className="group absolute top-16 right-4 sm:top-20 sm:right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-2 sm:px-3.5 sm:py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
         >
-          <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
+          <span className="relative inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
             <MessageCircleMore size={18} />
             {messages.length > 0 && (
               <span className="absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full border border-white/15 bg-rose-500/80 px-1 text-[10px] font-semibold text-white shadow">
@@ -1060,9 +1060,9 @@ export default function VideoCall() {
             setControlsVisible(false);
             setMessagesVisible(false);
           }}
-          className="group absolute top-[8.4rem] right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
+          className="group absolute top-[6.5rem] right-4 sm:top-[8.4rem] sm:right-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-2 sm:px-3.5 sm:py-3 text-white/90 shadow-2xl backdrop-blur-xl transition hover:bg-white/10 hover:border-white/15 active:scale-[0.99]"
         >
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
+          <span className="inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 transition group-hover:ring-white/20">
             <GalleryThumbnails size={18} />
           </span>
           <span
