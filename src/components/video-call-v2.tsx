@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Peer, { MediaConnection, DataConnection } from "peerjs";
 import CinemaWrapper from "./cinema/CinemaWrapper";
 import { Copy, GalleryThumbnails, MessageCircleMore, Mic, MicOff, Phone, ScreenShare, Settings, User, Video, VideoOff, XCircle } from "lucide-react";
@@ -97,8 +97,12 @@ export default function VideoCall() {
   const [messagesVisible, setMessagesVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [seatOptionsVisible, setSeatOptionsVisible] = useState(false);
-  const [selectedSeatId, setSelectedSeatId] = useState("mid-5");
+  const [selectedSeatId, setSelectedSeatId] = useState("mid2-10");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
+  const [assetsProgress, setAssetsProgress] = useState(0);
+  const [gyroEnabled, setGyroEnabled] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
 
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -121,6 +125,12 @@ export default function VideoCall() {
     maxSeatsInRow * seatButtonWidthRem +
     Math.max(0, maxSeatsInRow - 1) * seatGapRem +
     seatPanelHorizontalPaddingRem;
+  const progressPercent = Math.round(Math.min(1, Math.max(0, assetsProgress)) * 100);
+  const progressBarWidth = Math.max(12, progressPercent);
+
+  useEffect(() => {
+    setIsMobile(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   const syncHostViewerState = () => {
     const viewerIds = Array.from(
@@ -484,6 +494,50 @@ export default function VideoCall() {
     }
   };
 
+  const handleAssetsProgress = useCallback(
+    (progress: { itemsLoaded: number; itemsTotal: number; ratio: number }) => {
+      if (!Number.isFinite(progress.ratio)) return;
+      setAssetsProgress(progress.ratio);
+    },
+    []
+  );
+
+  const handleAssetsLoaded = useCallback(() => {
+    setAssetsProgress(1);
+    setAssetsLoaded(true);
+  }, []);
+
+  const handleAssetsError = useCallback((error: unknown) => {
+    console.error("Asset load error:", error);
+    setAssetsLoaded(true);
+  }, []);
+
+  const toggleGyro = async () => {
+    if (!isMobile) return;
+    if (!gyroEnabled) {
+      const maybePermission = (DeviceOrientationEvent as unknown as {
+        requestPermission?: () => Promise<"granted" | "denied">;
+      }).requestPermission;
+      if (maybePermission) {
+        try {
+          const response = await maybePermission();
+          if (response !== "granted") return;
+        } catch (error) {
+          console.error("Gyro permission error:", error);
+          return;
+        }
+      }
+    }
+    setGyroEnabled((prev) => !prev);
+  };
+
+  useEffect(() => {
+    if (!mode) return;
+    setAssetsLoaded(false);
+    setAssetsProgress(0);
+    setGyroEnabled(false);
+  }, [mode]);
+
 
 
   // Step 1: Landing page
@@ -524,7 +578,6 @@ export default function VideoCall() {
                 </div>
               </div>
           </div>
-          <CinemaWrapper/>
           </div>
   );
 }
@@ -534,6 +587,40 @@ export default function VideoCall() {
   return (
 
     <div className="relative w-screen h-screen bg-black overflow-hidden">
+      {!assetsLoaded && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center text-white bg-black/55 backdrop-blur-xl">
+          <div className="w-full max-w-xl px-6">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl">
+              <div className="absolute -top-28 -left-24 h-56 w-56 rounded-full bg-linear-to-br from-cyan-400/25 to-blue-500/10 blur-2xl" />
+              <div className="relative space-y-6">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/80">
+                  <span className="h-2 w-2 rounded-full bg-cyan-300" />
+                  Vinema 3D
+                </div>
+                <h1 className="text-3xl md:text-4xl font-semibold leading-tight">
+                  Loading assets
+                </h1>
+                <p className="text-sm text-white/70">
+                  Preparing the 3D cinema environment.
+                </p>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-linear-to-r from-cyan-400 via-blue-400 to-indigo-400 transition-all"
+                    style={{ width: `${progressBarWidth}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs text-white/50">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 animate-ping rounded-full bg-cyan-300/80" />
+                    Optimizing shaders and streams
+                  </span>
+                  <span>{progressPercent}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <button
         onClick={() => {setControlsVisible(!controlsVisible); setMessagesVisible(false); setSeatOptionsVisible(false)}}
         className="absolute top-6 right-6 z-50 bg-gray-900/70 text-white rounded-full p-3 shadow-lg"
@@ -728,6 +815,16 @@ export default function VideoCall() {
                 {isSharingScreen ? 'Stop Share' : 'Share Screen'}
               </button>
             )}
+            {isMobile && (
+              <button
+                onClick={toggleGyro}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
+                  gyroEnabled ? "bg-teal-500 hover:bg-teal-400" : "bg-gray-700 hover:bg-gray-600"
+                }`}
+              >
+                {gyroEnabled ? "Gyro On" : "Enable Gyro"}
+              </button>
+            )}
           </div>
 
         
@@ -747,20 +844,26 @@ export default function VideoCall() {
 
       {mode === 'host' && (
         <CinemaWrapper
-          key={`host-${selectedSeat.id}`}
           videoElement={localVideoRef.current as any}
           videoStream={localStreamRef.current as any}
           isHost={true}
           initialCameraPosition={selectedSeat.cameraPosition}
+          enableGyro={gyroEnabled && isMobile}
+          onAssetsLoaded={handleAssetsLoaded}
+          onAssetsProgress={handleAssetsProgress}
+          onAssetsError={handleAssetsError}
         />
       )}
       {mode === 'join' && (
         <CinemaWrapper
-          key={`join-${selectedSeat.id}`}
           videoElement={remoteVideoRef.current as any}
           videoStream={remoteStreamRef.current as any}
           isHost={false}
           initialCameraPosition={selectedSeat.cameraPosition}
+          enableGyro={gyroEnabled && isMobile}
+          onAssetsLoaded={handleAssetsLoaded}
+          onAssetsProgress={handleAssetsProgress}
+          onAssetsError={handleAssetsError}
         />
       )}
     </div>

@@ -9,6 +9,10 @@ interface Props {
   height?: number;
   isHost?: boolean;
   initialCameraPosition?: [number, number, number];
+  enableGyro?: boolean;
+  onAssetsLoaded?: () => void;
+  onAssetsProgress?: (progress: { itemsLoaded: number; itemsTotal: number; ratio: number }) => void;
+  onAssetsError?: (error: unknown) => void;
 }
 
 /**
@@ -22,6 +26,10 @@ export default function CinemaWrapper({
   height = window.innerHeight,
   isHost = false,
   initialCameraPosition = [0, 3, 3.5],
+  enableGyro = false,
+  onAssetsLoaded,
+  onAssetsProgress,
+  onAssetsError,
 }: Props) {
 
   console.log("videoElement", videoElement);
@@ -45,6 +53,10 @@ export default function CinemaWrapper({
         height={height}
         isHost={isHost}
         initialCameraPosition={initialCameraPosition}
+        enableGyro={enableGyro}
+        onAssetsLoaded={onAssetsLoaded}
+        onAssetsProgress={onAssetsProgress}
+        onAssetsError={onAssetsError}
       />
     </>
   );
