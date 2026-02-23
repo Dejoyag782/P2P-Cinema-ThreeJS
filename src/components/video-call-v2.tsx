@@ -93,6 +93,13 @@ export default function VideoCall() {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const combinedScreenStreamRef = useRef<MediaStream | null>(null);
+  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMicId, setSelectedMicId] = useState<string>("default");
+  const [displayName, setDisplayName] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [namePromptVisible, setNamePromptVisible] = useState(false);
+  const [pendingMode, setPendingMode] = useState<null | "host" | "join">(null);
   const [copied, setCopied] = useState(false);
   const [messagesVisible, setMessagesVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -117,8 +124,12 @@ export default function VideoCall() {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const hostCallsRef = useRef<Map<string, MediaConnection>>(new Map());
   const hostDataConnsRef = useRef<Map<string, DataConnection>>(new Map());
+  const viewerCallsRef = useRef<Map<string, MediaConnection>>(new Map());
   const joinerCallRef = useRef<MediaConnection | null>(null);
   const joinerDataConnRef = useRef<DataConnection | null>(null);
+  const [viewerAudioStreams, setViewerAudioStreams] = useState<
+    { id: string; stream: MediaStream }[]
+  >([]);
   const selectedSeat =
     SEAT_OPTIONS.find((seat) => seat.id === selectedSeatId) ?? SEAT_OPTIONS[0];
   const maxSeatsInRow = Math.max(
@@ -134,8 +145,117 @@ export default function VideoCall() {
   const progressPercent = Math.round(Math.min(1, Math.max(0, assetsProgress)) * 100);
   const progressBarWidth = Math.max(12, progressPercent);
 
+  const appendMessage = (sender: string, text: string) => {
+    setMessages((prev) => [...prev, { sender, text }]);
+  };
+
+  const parseChatPayload = (data: unknown) => {
+    if (typeof data === "string") {
+      return { sender: "Guest", text: data, senderId: null as string | null };
+    }
+    if (data && typeof data === "object") {
+      const maybe = data as { type?: string; sender?: string; text?: string; senderId?: string };
+      if (maybe.type === "chat" && typeof maybe.text === "string") {
+        return {
+          sender: typeof maybe.sender === "string" && maybe.sender.trim() ? maybe.sender : "Guest",
+          text: maybe.text,
+          senderId: typeof maybe.senderId === "string" ? maybe.senderId : null,
+        };
+      }
+    }
+    return null;
+  };
+
+  const addViewerAudioStream = (viewerId: string, stream: MediaStream) => {
+    setViewerAudioStreams((prev) => {
+      const existing = prev.find((item) => item.id === viewerId);
+      if (existing) {
+        return prev.map((item) => (item.id === viewerId ? { id: viewerId, stream } : item));
+      }
+      return [...prev, { id: viewerId, stream }];
+    });
+  };
+
+  const removeViewerAudioStream = (viewerId: string) => {
+    setViewerAudioStreams((prev) => prev.filter((item) => item.id !== viewerId));
+  };
+
+  const shouldInitiateViewerCall = (otherId: string) => {
+    const selfId = peerId || peer?.id;
+    if (!selfId) return false;
+    if (otherId === selfId) return false;
+    // Deterministic rule to avoid double calls.
+    return selfId > otherId;
+  };
+
+  const ensureViewerCall = async (otherId: string) => {
+    if (!peer || mode !== "join") return;
+    if (viewerCallsRef.current.has(otherId)) return;
+    if (!shouldInitiateViewerCall(otherId)) return;
+    try {
+      const stream = await ensureLocalStream();
+      const call = peer.call(otherId, stream);
+      if (!call) return;
+      viewerCallsRef.current.set(otherId, call);
+      call.on("stream", (remoteStream) => {
+        addViewerAudioStream(otherId, remoteStream);
+      });
+      call.on("close", () => {
+        viewerCallsRef.current.delete(otherId);
+        removeViewerAudioStream(otherId);
+      });
+      call.on("error", () => {
+        viewerCallsRef.current.delete(otherId);
+        removeViewerAudioStream(otherId);
+      });
+    } catch (error) {
+      console.error("Viewer call failed:", error);
+    }
+  };
+
+  const closeViewerCall = (otherId: string) => {
+    const call = viewerCallsRef.current.get(otherId);
+    if (call) {
+      call.close();
+      viewerCallsRef.current.delete(otherId);
+    }
+    removeViewerAudioStream(otherId);
+  };
+
+  const replaceCallTracks = (call: MediaConnection, stream: MediaStream | null) => {
+    if (!stream) return;
+    const videoTrack = stream.getVideoTracks()[0];
+    const audioTrack = stream.getAudioTracks()[0];
+    const senders = call.peerConnection.getSenders();
+    const videoSender = senders.find((s) => s.track?.kind === "video");
+    if (videoSender && videoTrack) videoSender.replaceTrack(videoTrack);
+    const audioSender = senders.find((s) => s.track?.kind === "audio");
+    if (audioSender && audioTrack) audioSender.replaceTrack(audioTrack);
+  };
+
   useEffect(() => {
     setIsMobile(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
+
+  const refreshAudioInputs = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter((device) => device.kind === "audioinput");
+      setAudioInputDevices(inputs);
+      if (!inputs.find((d) => d.deviceId === selectedMicId)) {
+        setSelectedMicId(inputs[0]?.deviceId ?? "default");
+      }
+    } catch (error) {
+      console.error("Failed to enumerate devices:", error);
+    }
+  };
+
+  useEffect(() => {
+    refreshAudioInputs();
+    navigator.mediaDevices.addEventListener("devicechange", refreshAudioInputs);
+    return () => {
+      navigator.mediaDevices.removeEventListener("devicechange", refreshAudioInputs);
+    };
   }, []);
 
   const syncHostViewerState = () => {
@@ -181,12 +301,47 @@ export default function VideoCall() {
 
   const ensureLocalStream = async () => {
     if (localStreamRef.current) return localStreamRef.current;
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
+    });
     localStreamRef.current = stream;
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream;
     }
     return stream;
+  };
+
+  const replaceOutgoingAudioTrack = (newTrack: MediaStreamTrack | null) => {
+    if (!newTrack) return;
+    const replaceInCall = (call: MediaConnection) => {
+      const sender = call.peerConnection.getSenders().find((s) => s.track?.kind === "audio");
+      if (sender) sender.replaceTrack(newTrack);
+    };
+    hostCallsRef.current.forEach(replaceInCall);
+    viewerCallsRef.current.forEach(replaceInCall);
+    if (joinerCallRef.current) replaceInCall(joinerCallRef.current);
+  };
+
+  const handleMicChange = async (deviceId: string) => {
+    setSelectedMicId(deviceId);
+    if (!localStreamRef.current) return;
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      });
+      const newTrack = micStream.getAudioTracks()[0];
+      if (!newTrack) return;
+
+      const oldTrack = localStreamRef.current.getAudioTracks()[0];
+      if (oldTrack) localStreamRef.current.removeTrack(oldTrack);
+      localStreamRef.current.addTrack(newTrack);
+      oldTrack?.stop();
+
+      replaceOutgoingAudioTrack(newTrack);
+    } catch (error) {
+      console.error("Failed to switch microphone:", error);
+    }
   };
 
   const closeAllConnections = () => {
@@ -195,6 +350,9 @@ export default function VideoCall() {
 
     hostDataConnsRef.current.forEach((conn) => conn.close());
     hostDataConnsRef.current.clear();
+
+    viewerCallsRef.current.forEach((call) => call.close());
+    viewerCallsRef.current.clear();
 
     joinerCallRef.current?.close();
     joinerCallRef.current = null;
@@ -206,6 +364,7 @@ export default function VideoCall() {
     setConnectedViewerIds([]);
     setHostAudioStreams([]);
     setHostMutedViewerIds(new Set());
+    setViewerAudioStreams([]);
   };
 
   const copyToClipboard = () => {
@@ -246,38 +405,67 @@ export default function VideoCall() {
 
     // Host receives calls from many joiners and answers each with host media.
     p.on("call", async (call) => {
-      if (mode !== "host") return;
-      try {
+      if (mode === "host") {
+        try {
         const stream = await ensureLocalStream();
         call.answer(stream);
         hostCallsRef.current.set(call.peer, call);
         syncHostViewerState();
+        if (isSharingScreen && combinedScreenStreamRef.current) {
+          replaceCallTracks(call, combinedScreenStreamRef.current);
+        }
 
-        call.on("stream", (remoteStream) => {
-          setHostAudioStreams((prev) => {
-            const existing = prev.find((item) => item.id === call.peer);
-            if (existing) {
-              return prev.map((item) =>
-                item.id === call.peer ? { id: call.peer, stream: remoteStream } : item
-              );
-            }
-            return [...prev, { id: call.peer, stream: remoteStream }];
+          call.on("stream", (remoteStream) => {
+            setHostAudioStreams((prev) => {
+              const existing = prev.find((item) => item.id === call.peer);
+              if (existing) {
+                return prev.map((item) =>
+                  item.id === call.peer ? { id: call.peer, stream: remoteStream } : item
+                );
+              }
+              return [...prev, { id: call.peer, stream: remoteStream }];
+            });
           });
-        });
 
-        call.on("close", () => {
-          hostCallsRef.current.delete(call.peer);
-          removeHostAudioStream(call.peer);
-          syncHostViewerState();
-        });
+          call.on("close", () => {
+            hostCallsRef.current.delete(call.peer);
+            removeHostAudioStream(call.peer);
+            syncHostViewerState();
+          });
 
-        call.on("error", () => {
-          hostCallsRef.current.delete(call.peer);
-          removeHostAudioStream(call.peer);
-          syncHostViewerState();
-        });
-      } catch (error) {
-        console.error("Failed to answer incoming call:", error);
+          call.on("error", () => {
+            hostCallsRef.current.delete(call.peer);
+            removeHostAudioStream(call.peer);
+            syncHostViewerState();
+          });
+        } catch (error) {
+          console.error("Failed to answer incoming call:", error);
+        }
+        return;
+      }
+
+      if (mode === "join") {
+        try {
+          const stream = await ensureLocalStream();
+          call.answer(stream);
+          viewerCallsRef.current.set(call.peer, call);
+
+          call.on("stream", (remoteStream) => {
+            addViewerAudioStream(call.peer, remoteStream);
+          });
+
+          call.on("close", () => {
+            viewerCallsRef.current.delete(call.peer);
+            removeViewerAudioStream(call.peer);
+          });
+
+          call.on("error", () => {
+            viewerCallsRef.current.delete(call.peer);
+            removeViewerAudioStream(call.peer);
+          });
+        } catch (error) {
+          console.error("Failed to answer viewer call:", error);
+        }
       }
     });
 
@@ -286,21 +474,76 @@ export default function VideoCall() {
       if (mode === "host") {
         hostDataConnsRef.current.set(conn.peer, conn);
         syncHostViewerState();
+        conn.on("open", () => {
+          const viewerIds = Array.from(hostDataConnsRef.current.keys()).filter(
+            (id) => id !== conn.peer
+          );
+          if (conn.open) {
+            conn.send({ type: "peer-list", peers: viewerIds });
+          }
+          hostDataConnsRef.current.forEach((otherConn) => {
+            if (otherConn.open && otherConn.peer !== conn.peer) {
+              otherConn.send({ type: "peer-joined", peerId: conn.peer });
+            }
+          });
+        });
         conn.on("data", (data) => {
-          setMessages((prev) => [...prev, { sender: conn.peer, text: String(data) }]);
+          const chat = parseChatPayload(data);
+          if (!chat) return;
+          appendMessage(chat.sender || conn.peer, chat.text);
+
+          // Relay viewer messages to all connected viewers (including sender for consistency)
+          hostDataConnsRef.current.forEach((otherConn) => {
+            if (otherConn.open && otherConn.peer !== conn.peer) {
+              otherConn.send({
+                type: "chat",
+                sender: chat.sender || conn.peer,
+                text: chat.text,
+                senderId: chat.senderId ?? conn.peer,
+              });
+            }
+          });
         });
         conn.on("close", () => {
           hostDataConnsRef.current.delete(conn.peer);
           syncHostViewerState();
+          hostDataConnsRef.current.forEach((otherConn) => {
+            if (otherConn.open) {
+              otherConn.send({ type: "peer-left", peerId: conn.peer });
+            }
+          });
         });
         conn.on("error", () => {
           hostDataConnsRef.current.delete(conn.peer);
           syncHostViewerState();
+          hostDataConnsRef.current.forEach((otherConn) => {
+            if (otherConn.open) {
+              otherConn.send({ type: "peer-left", peerId: conn.peer });
+            }
+          });
         });
       } else {
         joinerDataConnRef.current = conn;
         conn.on("data", (data) => {
-          setMessages((prev) => [...prev, { sender: "Host", text: String(data) }]);
+          if (data && typeof data === "object") {
+            const maybe = data as { type?: string; peers?: string[]; peerId?: string };
+            if (maybe.type === "peer-list" && Array.isArray(maybe.peers)) {
+              maybe.peers.forEach((id) => ensureViewerCall(id));
+              return;
+            }
+            if (maybe.type === "peer-joined" && typeof maybe.peerId === "string") {
+              ensureViewerCall(maybe.peerId);
+              return;
+            }
+            if (maybe.type === "peer-left" && typeof maybe.peerId === "string") {
+              closeViewerCall(maybe.peerId);
+              return;
+            }
+          }
+          const chat = parseChatPayload(data);
+          if (!chat) return;
+          if (chat.senderId && chat.senderId === peerId) return;
+          appendMessage(chat.sender, chat.text);
         });
       }
     });
@@ -346,7 +589,25 @@ export default function VideoCall() {
       joinerDataConnRef.current = conn;
     });
     conn.on("data", (data) => {
-      setMessages((prev) => [...prev, { sender: "Host", text: String(data) }]);
+      if (data && typeof data === "object") {
+        const maybe = data as { type?: string; peers?: string[]; peerId?: string };
+        if (maybe.type === "peer-list" && Array.isArray(maybe.peers)) {
+          maybe.peers.forEach((id) => ensureViewerCall(id));
+          return;
+        }
+        if (maybe.type === "peer-joined" && typeof maybe.peerId === "string") {
+          ensureViewerCall(maybe.peerId);
+          return;
+        }
+        if (maybe.type === "peer-left" && typeof maybe.peerId === "string") {
+          closeViewerCall(maybe.peerId);
+          return;
+        }
+      }
+      const chat = parseChatPayload(data);
+      if (!chat) return;
+      if (chat.senderId && chat.senderId === peerId) return;
+      appendMessage(chat.sender, chat.text);
     });
     conn.on("close", () => {
       joinerDataConnRef.current = null;
@@ -358,6 +619,10 @@ export default function VideoCall() {
     screenStreamRef.current = null;
     setIsSharingScreen(false);
 
+    viewerCallsRef.current.forEach((call) => call.close());
+    viewerCallsRef.current.clear();
+    setViewerAudioStreams([]);
+
     closeAllConnections();
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -367,6 +632,8 @@ export default function VideoCall() {
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     setMessages([]);
+    setDisplayName("");
+    setNameInput("");
     setMode(null);
   };
 
@@ -376,14 +643,14 @@ export default function VideoCall() {
 
     if (mode === "host") {
       hostDataConnsRef.current.forEach((conn) => {
-        if (conn.open) conn.send(trimmed);
+        if (conn.open) conn.send({ type: "chat", sender: localSenderName, text: trimmed, senderId: localSenderId });
       });
-      setMessages((prev) => [...prev, { sender: "Host", text: trimmed }]);
+      appendMessage(localSenderName, trimmed);
     } else {
       const conn = joinerDataConnRef.current;
       if (!conn?.open) return;
-      conn.send(trimmed);
-      setMessages((prev) => [...prev, { sender: "You", text: trimmed }]);
+      conn.send({ type: "chat", sender: localSenderName, text: trimmed, senderId: localSenderId });
+      appendMessage(localSenderName, trimmed);
     }
 
     setInputMessage("");
@@ -411,7 +678,7 @@ export default function VideoCall() {
 
       // Request mic audio
       const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
       });
 
       // --- Combine system audio (if any) and mic audio ---
@@ -435,36 +702,13 @@ export default function VideoCall() {
       ]);
 
       screenStreamRef.current = screenStream;
+      combinedScreenStreamRef.current = combinedStream;
       setIsSharingScreen(true);
 
-      // --- Replace the video track in the call ---
-      const videoTrack = combinedStream.getVideoTracks()[0];
-      const replaceVideoInCall = (call: MediaConnection) => {
-        const sender = call.peerConnection
-          .getSenders()
-          .find((s) => s.track?.kind === "video");
-        if (sender && videoTrack) sender.replaceTrack(videoTrack);
-      };
-
       if (mode === "host") {
-        hostCallsRef.current.forEach(replaceVideoInCall);
+        hostCallsRef.current.forEach((call) => replaceCallTracks(call, combinedStream));
       } else if (joinerCallRef.current) {
-        replaceVideoInCall(joinerCallRef.current);
-      }
-
-      // --- Replace the audio track (optional but improves consistency) ---
-      const audioTrack = combinedStream.getAudioTracks()[0];
-      const replaceAudioInCall = (call: MediaConnection) => {
-        const audioSender = call.peerConnection
-          .getSenders()
-          .find((s) => s.track?.kind === "audio");
-        if (audioSender && audioTrack) audioSender.replaceTrack(audioTrack);
-      };
-
-      if (mode === "host") {
-        hostCallsRef.current.forEach(replaceAudioInCall);
-      } else if (joinerCallRef.current) {
-        replaceAudioInCall(joinerCallRef.current);
+        replaceCallTracks(joinerCallRef.current, combinedStream);
       }
 
       // Update local preview
@@ -487,25 +731,19 @@ export default function VideoCall() {
     // Stop the screen stream
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
     screenStreamRef.current = null;
+    combinedScreenStreamRef.current = null;
     setIsSharingScreen(false);
 
     // Restore camera tracks
     const cameraVideoTrack = localStreamRef.current.getVideoTracks()[0];
     const cameraAudioTrack = localStreamRef.current.getAudioTracks()[0];
 
-    const restoreInCall = (call: MediaConnection) => {
-      const senders = call.peerConnection.getSenders();
-      const videoSender = senders.find((s) => s.track?.kind === "video");
-      if (videoSender && cameraVideoTrack) videoSender.replaceTrack(cameraVideoTrack);
-
-      const audioSender = senders.find((s) => s.track?.kind === "audio");
-      if (audioSender && cameraAudioTrack) audioSender.replaceTrack(cameraAudioTrack);
-    };
-
     if (mode === "host") {
-      hostCallsRef.current.forEach(restoreInCall);
+      hostCallsRef.current.forEach((call) =>
+        replaceCallTracks(call, localStreamRef.current)
+      );
     } else if (joinerCallRef.current) {
-      restoreInCall(joinerCallRef.current);
+      replaceCallTracks(joinerCallRef.current, localStreamRef.current);
     }
 
     // Restore local video preview
@@ -572,6 +810,31 @@ export default function VideoCall() {
     setGyroEnabled(false);
   }, [mode]);
 
+  const openNamePrompt = (nextMode: "host" | "join") => {
+    setPendingMode(nextMode);
+    setNameInput(displayName);
+    setNamePromptVisible(true);
+  };
+
+  const confirmNamePrompt = () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+    setDisplayName(trimmed);
+    setNamePromptVisible(false);
+    if (pendingMode) {
+      setMode(pendingMode);
+      setPendingMode(null);
+    }
+  };
+
+  const cancelNamePrompt = () => {
+    setNamePromptVisible(false);
+    setPendingMode(null);
+  };
+
+  const localSenderName = displayName || (mode === "host" ? "Host" : "Guest");
+  const localSenderId = peerId || peer?.id || "";
+
 
 
   const showLanding = !mode;
@@ -611,14 +874,14 @@ export default function VideoCall() {
 
                 <div className="flex flex-wrap gap-3 pt-2">
                   <button
-                    onClick={() => setMode("host")}
+                    onClick={() => openNamePrompt("host")}
                     className="inline-flex items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-5 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-400/15 active:scale-[0.99]"
                   >
                     I'm the Host
                   </button>
 
                   <button
-                    onClick={() => setMode("join")}
+                    onClick={() => openNamePrompt("join")}
                     className="inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-400/10 px-5 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-400/15 active:scale-[0.99]"
                   >
                     I'm a Viewer
@@ -668,6 +931,43 @@ export default function VideoCall() {
           </div>
         </div>
       </div>
+      {namePromptVisible && (
+        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/15 bg-linear-to-b from-white/10 to-white/5 text-white shadow-2xl">
+            <div className="p-6 space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/80">
+                Choose a name
+              </div>
+              <h2 className="text-2xl font-semibold">Display name</h2>
+              <p className="text-sm text-white/70">
+                This name will appear in chat for everyone in the session.
+              </p>
+              <input
+                type="text"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && confirmNamePrompt()}
+                placeholder="Enter your name"
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-white/40 outline-none focus:ring-2 focus:ring-emerald-400/30"
+              />
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={confirmNamePrompt}
+                  className="flex-1 rounded-2xl border border-emerald-400/30 bg-emerald-400/15 px-4 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-400/20 active:scale-[0.99]"
+                >
+                  Continue
+                </button>
+                <button
+                  onClick={cancelNamePrompt}
+                  className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/80 transition hover:bg-white/10 active:scale-[0.99]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {mode && !assetsLoaded && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center text-white bg-black/55 backdrop-blur-xl">
           <div className="w-full max-w-xl px-6">
@@ -849,10 +1149,10 @@ export default function VideoCall() {
           <div className="px-5 pb-5 space-y-3">
             <div className="lg:min-h-155 lg:max-h-155 max-h-50 min-h-50 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-3">
               {messages.map((msg, i) => (
-                <div key={i} className={msg.sender === "You" ? "text-right" : "text-left"}>
+                <div key={i} className={msg.sender === localSenderName ? "text-right" : "text-left"}>
                   <span
                     className={`inline-block max-w-[85%] px-3 py-2 rounded-2xl mt-2 text-sm border ${
-                      msg.sender === "You"
+                      msg.sender === localSenderName
                         ? "bg-emerald-400/15 border-emerald-400/20 text-emerald-100"
                         : "bg-white/10 border-white/10 text-white/90"
                     }`}
@@ -1019,6 +1319,26 @@ export default function VideoCall() {
                 </button>
               )}
             </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-white/50 mb-2">
+                Microphone
+              </div>
+              <select
+                value={selectedMicId}
+                onChange={(e) => handleMicChange(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-emerald-400/30"
+              >
+                {audioInputDevices.length === 0 && (
+                  <option value="default">Default microphone</option>
+                )}
+                {audioInputDevices.map((device, index) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label || `Microphone ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       )}
@@ -1050,7 +1370,7 @@ export default function VideoCall() {
         }
         videoStream={
           mode === "host"
-            ? (localStreamRef.current as any)
+            ? ((isSharingScreen ? combinedScreenStreamRef.current : localStreamRef.current) as any)
             : mode === "join"
             ? (remoteStreamRef.current as any)
             : null
@@ -1071,6 +1391,23 @@ export default function VideoCall() {
               autoPlay
               playsInline
               muted={hostMutedViewerIds.has(item.id)}
+              ref={(el) => {
+                if (el && el.srcObject !== item.stream) {
+                  el.srcObject = item.stream;
+                }
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {mode === "join" && (
+        <div className="hidden">
+          {viewerAudioStreams.map((item) => (
+            <audio
+              key={item.id}
+              autoPlay
+              playsInline
               ref={(el) => {
                 if (el && el.srcObject !== item.stream) {
                   el.srcObject = item.stream;
