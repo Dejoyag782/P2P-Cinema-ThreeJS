@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
-import * as THREE from 'three';
-import { DeviceOrientationControls, GLTFLoader, PointerLockControls } from 'three-stdlib';
+import { useEffect, useRef } from "react";
+import * as THREE from "three";
+import { DeviceOrientationControls, GLTFLoader, PointerLockControls } from "three-stdlib";
 
 interface CinemaVideoProps {
   videoElement?: HTMLVideoElement | null;
@@ -31,49 +31,50 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
+  const screenRef = useRef<THREE.Mesh | null>(null);
+  const animationRef = useRef<number | null>(null);
   const targetPositionRef = useRef<[number, number, number]>(initialCameraPosition);
   const enableGyroRef = useRef(enableGyro);
   const controlsRef = useRef<PointerLockControls | null>(null);
   const gyroControlsRef = useRef<DeviceOrientationControls | null>(null);
+  const onAssetsLoadedRef = useRef(onAssetsLoaded);
+  const onAssetsProgressRef = useRef(onAssetsProgress);
+  const onAssetsErrorRef = useRef(onAssetsError);
 
   useEffect(() => {
     enableGyroRef.current = enableGyro;
   }, [enableGyro]);
 
   useEffect(() => {
+    onAssetsLoadedRef.current = onAssetsLoaded;
+    onAssetsProgressRef.current = onAssetsProgress;
+    onAssetsErrorRef.current = onAssetsError;
+  }, [onAssetsLoaded, onAssetsProgress, onAssetsError]);
+
+  useEffect(() => {
     if (!mountRef.current) return;
+
     let didSignalLoaded = false;
     const signalLoaded = () => {
       if (didSignalLoaded) return;
       didSignalLoaded = true;
-      onAssetsLoaded?.();
+      onAssetsLoadedRef.current?.();
     };
 
-    // Create video element if not provided
-    const video = videoElement || document.createElement('video');
-    console.log('isHost', isHost);
-    video.crossOrigin = 'anonymous';
+    const video = videoRef.current ?? document.createElement("video");
+    videoRef.current = video;
+    video.crossOrigin = "anonymous";
     video.loop = true;
-    video.muted = isHost;
     video.playsInline = true;
+    video.muted = isHost;
 
-    // Handle video stream
-    if (videoStream) {
-      console.log('🎥 Binding MediaStream to video element...');
-      video.srcObject = videoStream;
-      video.muted = isHost;
-      video.onloadedmetadata = () => {
-        video.play().catch(err => console.warn('Autoplay blocked:', err));
-      };
-    } else {
-      console.log('🌸 Using fallback demo video');
-      video.src = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
-      video.play().catch(console.warn);
-    }
-
-    // Scene setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x07060a);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
     camera.position.set(...initialCameraPosition);
@@ -84,10 +85,11 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(width, height);
-    mountRef.current.innerHTML = ''; // Clear previous renderer if any
+    rendererRef.current = renderer;
+
+    mountRef.current.innerHTML = "";
     mountRef.current.appendChild(renderer.domElement);
 
-    // Lights
     const ambient = new THREE.AmbientLight(0xffffff, 0.15);
     scene.add(ambient);
 
@@ -95,12 +97,10 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     directional.position.set(5, 10, 5);
     scene.add(directional);
 
-    // Screen glow
     const screenLight = new THREE.PointLight(0xffffff, 1.2, 20);
     screenLight.position.set(0, 3.3, -4.2);
     scene.add(screenLight);
 
-    // Floor
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(50, 50),
       new THREE.MeshStandardMaterial({ color: 0x080608, roughness: 0.9 })
@@ -108,15 +108,14 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // Load cinema model
     const loadingManager = new THREE.LoadingManager();
     loadingManager.onLoad = () => signalLoaded();
     loadingManager.onProgress = (_url, itemsLoaded, itemsTotal) => {
       const ratio = itemsTotal > 0 ? itemsLoaded / itemsTotal : 0;
-      onAssetsProgress?.({ itemsLoaded, itemsTotal, ratio });
+      onAssetsProgressRef.current?.({ itemsLoaded, itemsTotal, ratio });
     };
     loadingManager.onError = (url) => {
-      onAssetsError?.(new Error(`Failed to load asset: ${url}`));
+      onAssetsErrorRef.current?.(new Error(`Failed to load asset: ${url}`));
     };
 
     const loader = new GLTFLoader(loadingManager);
@@ -133,20 +132,19 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
       (xhr) => {
         if (xhr.lengthComputable) {
           const ratio = xhr.total > 0 ? xhr.loaded / xhr.total : 0;
-          onAssetsProgress?.({ itemsLoaded: xhr.loaded, itemsTotal: xhr.total, ratio });
+          onAssetsProgressRef.current?.({ itemsLoaded: xhr.loaded, itemsTotal: xhr.total, ratio });
         }
       },
       (error) => {
-        console.error('Error loading model:', error);
-        onAssetsError?.(error);
+        onAssetsErrorRef.current?.(error);
       }
     );
 
-    // Video texture and screen
     const videoTexture = new THREE.VideoTexture(video);
     videoTexture.minFilter = THREE.LinearFilter;
     videoTexture.magFilter = THREE.LinearFilter;
     videoTexture.colorSpace = THREE.SRGBColorSpace;
+    videoTextureRef.current = videoTexture;
 
     const screen = new THREE.Mesh(
       new THREE.PlaneGeometry(13, 6.5),
@@ -154,8 +152,8 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     );
     screen.position.set(0, 3.3, -4);
     scene.add(screen);
+    screenRef.current = screen;
 
-    // --- Pointer Lock ---
     const controls = new PointerLockControls(camera, renderer.domElement);
     const onClick = () => {
       if (enableGyroRef.current) return;
@@ -164,7 +162,6 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     renderer.domElement.addEventListener("click", onClick);
     controlsRef.current = controls;
 
-    // --- Animate ---
     let stop = false;
     const animate = () => {
       if (stop) return;
@@ -180,37 +177,83 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
         gyroControlsRef.current?.update();
       }
       renderer.render(scene, camera);
-      requestAnimationFrame(animate);
+      animationRef.current = requestAnimationFrame(animate);
     };
     animate();
 
     return () => {
       stop = true;
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
       renderer.domElement.removeEventListener("click", onClick);
       renderer.dispose();
       scene.clear();
+      if (renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
       cameraRef.current = null;
       controlsRef.current = null;
       gyroControlsRef.current?.disconnect();
       gyroControlsRef.current = null;
+      videoTextureRef.current?.dispose();
+      videoTextureRef.current = null;
+      screenRef.current = null;
+      sceneRef.current = null;
+      rendererRef.current = null;
     };
-  }, [
-    videoStream,
-    modelUrl,
-    isHost,
-    width,
-    height,
-    enableGyro,
-    onAssetsLoaded,
-    onAssetsProgress,
-    onAssetsError,
-  ]);
+  }, [modelUrl]);
 
   useEffect(() => {
+    const renderer = rendererRef.current;
     const camera = cameraRef.current;
-    if (!camera) return;
+    if (!renderer || !camera) return;
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  }, [width, height]);
+
+  useEffect(() => {
     targetPositionRef.current = initialCameraPosition;
   }, [initialCameraPosition]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const playSafe = () => {
+      video.play().catch(() => undefined);
+    };
+
+    video.muted = isHost;
+
+    if (videoStream) {
+      video.srcObject = videoStream;
+      video.onloadedmetadata = playSafe;
+      return;
+    }
+
+    const elementSrcObject = videoElement?.srcObject as MediaStream | null;
+    if (elementSrcObject) {
+      video.srcObject = elementSrcObject;
+      video.onloadedmetadata = playSafe;
+      return;
+    }
+
+    const elementSrc = videoElement?.currentSrc || videoElement?.src;
+    if (elementSrc) {
+      video.srcObject = null;
+      video.src = elementSrc;
+      playSafe();
+      return;
+    }
+
+    video.srcObject = null;
+    video.src = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+    playSafe();
+  }, [videoStream, videoElement, isHost]);
 
   useEffect(() => {
     if (!enableGyro) {
@@ -231,7 +274,6 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
     };
   }, [enableGyro]);
 
-
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-none">
       <div ref={mountRef} className="absolute inset-0 w-full h-full z-0" />
@@ -240,6 +282,6 @@ const CinemaVideo: React.FC<CinemaVideoProps> = ({
       </div>
     </div>
   );
-}
+};
 
 export default CinemaVideo;

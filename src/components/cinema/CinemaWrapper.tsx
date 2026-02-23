@@ -32,20 +32,10 @@ export default function CinemaWrapper({
   onAssetsError,
 }: Props) {
 
-  console.log("videoElement", videoElement);
-  console.log("videoStream", videoStream);
-  
   return (
     <>
     {/* <video src={videoStream?.getVideoTracks()[0] as any} autoPlay /> */}
       <CinemaVideo
-      key={
-        videoStream
-          ? "cinema-stream"
-          : videoElement
-          ? "cinema-element"
-          : "cinema-default"
-      }
       videoElement={videoElement as any}
         videoStream={videoStream as any}
         modelUrl={CinemaModel}
