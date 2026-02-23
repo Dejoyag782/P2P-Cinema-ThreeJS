@@ -734,10 +734,6 @@ export default function VideoCall() {
     combinedScreenStreamRef.current = null;
     setIsSharingScreen(false);
 
-    // Restore camera tracks
-    const cameraVideoTrack = localStreamRef.current.getVideoTracks()[0];
-    const cameraAudioTrack = localStreamRef.current.getAudioTracks()[0];
-
     if (mode === "host") {
       hostCallsRef.current.forEach((call) =>
         replaceCallTracks(call, localStreamRef.current)
